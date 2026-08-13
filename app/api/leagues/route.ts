@@ -1,0 +1,2 @@
+import {NextResponse} from "next/server";import {listLeagues} from "@/lib/db";import {isAuthorized} from "@/lib/auth";
+export async function GET(){if(!await isAuthorized())return NextResponse.json({error:"Faça login para acessar as análises."},{status:401});try{return NextResponse.json({leagues:await listLeagues()})}catch{return NextResponse.json({error:"Banco de dados indisponível."},{status:503})}}
