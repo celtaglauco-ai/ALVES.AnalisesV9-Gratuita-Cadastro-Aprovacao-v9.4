@@ -185,7 +185,7 @@ export default function Home() {
     [tableMode, setTableMode] = useState<TableMode>("TOTAL"),
     [teamSearch, setTeamSearch] = useState(""),
     [selectedReferee, setSelectedReferee] = useState(""),
-    [apiInfo, setApiInfo] = useState("Classificação calculada pelo CSV"),
+    [apiInfo, setApiInfo] = useState("Selecione uma liga para consultar a temporada atual na API"),
     [apiStandings, setApiStandings] = useState<Partial<Record<TableMode,StandingRow[]>>>({}),
     [liveApiGames, setLiveApiGames] = useState<LiveApiGame[]>([]),
     [liveApiInfo, setLiveApiInfo] = useState("Clique para consultar os jogos ao vivo"),
@@ -380,35 +380,40 @@ export default function Home() {
           ),
       ),
     );
-  const localStandings=useMemo(()=>league?buildTable(league.games,tableMode):[],[league,tableMode]),
-    standings=apiStandings[tableMode]||localStandings,
+  const standings=apiStandings[tableMode]||[],
     visibleStandings=standings.filter(x=>x.team.toLowerCase().includes(teamSearch.toLowerCase())),
     homeVenueTable=league?buildTable(league.games,"HOME"):[], awayVenueTable=awayLeague?buildTable(awayLeague.games,"AWAY"):[],
     homeStanding=homeVenueTable.find(x=>x.team===home), awayStanding=awayVenueTable.find(x=>x.team===away),
     referees=useMemo(()=>league?[...new Set(league.games.map(g=>g.referee).filter((x):x is string=>!!x))].sort():[],[league]),
-    refName=selectedReferee||referees[0]||"",
-    refereeGames=league?.games.filter(g=>g.referee===refName)||[],
+    refName=selectedReferee||referees[0]||"Média geral da arbitragem da liga",
+    refereeGames=league?.games.filter(g=>referees.length?g.referee===refName:true)||[],
+    leagueCards=league?avg(league.games.map(g=>g.hy+g.ay+g.hr+g.ar)):0,
     refereeStats=refereeGames.length?{
       games:refereeGames.length,
       yellow:avg(refereeGames.map(g=>g.hy+g.ay)),
       red:avg(refereeGames.map(g=>g.hr+g.ar)),
       cards:avg(refereeGames.map(g=>g.hy+g.ay+g.hr+g.ar)),
       fouls:avg(refereeGames.map(g=>(g.hf||0)+(g.af||0))),
+      homeYellow:avg(refereeGames.map(g=>g.hy)),
+      awayYellow:avg(refereeGames.map(g=>g.ay)),
+      homeCards:avg(refereeGames.map(g=>g.hy+g.hr)),
+      awayCards:avg(refereeGames.map(g=>g.ay+g.ar)),
       over35:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=4),
       over45:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=5),
       over55:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=6),
+      recent:refereeGames.slice(-5).map(g=>g.hy+g.ay+g.hr+g.ar),
     }:null,
     h2h=league&&league.id===awayLeague?.id?league.games.filter(g=>(g.home===home&&g.away===away)||(g.home===away&&g.away===home)).slice(-5):[];
   const checkFreeApi=async()=>{
     if(!league)return;
     setApiInfo("Consultando API gratuita...");
     const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(league.id)}`,{cache:"no-store"}),d=await r.json();
-    if(d.available){setApiStandings(d.tables||{});setApiInfo(`Atualizado pela ${d.source} • ${new Date(d.updatedAt).toLocaleTimeString("pt-BR")}`)}else{setApiStandings({});setApiInfo(d.reason||"Usando classificação completa do CSV")}
+    if(d.available){setApiStandings(d.tables||{});setApiInfo(`${d.league?.name||league.name} • temporada ${d.league?.season} • atualizado pela ${d.source} às ${new Date(d.updatedAt).toLocaleTimeString("pt-BR")}`)}else{setApiStandings({});setApiInfo(d.reason||"Classificação atual indisponível na API")}
   };
   const fetchLiveGames=async()=>{setLiveApiLoading(true);setLiveApiInfo("Consultando jogos ao vivo...");try{const r=await fetch("/api/live",{cache:"no-store"}),d=await r.json();if(d.available){setLiveApiGames(d.games||[]);setLiveApiInfo(`${d.games?.length||0} jogos ao vivo • cota restante: ${d.remaining||"—"}`)}else setLiveApiInfo(d.reason||"API indisponível")}finally{setLiveApiLoading(false)}};
   const loadLiveStats=async(g:LiveApiGame)=>{setLiveApiLoading(true);try{const r=await fetch(`/api/live?id=${g.id}`,{cache:"no-store"}),d=await r.json(),teams=d.statistics||[];const values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value]));const h=values(0),a=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%",""));setLive(x=>({...x,minute:g.minute||x.minute,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(a,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(a,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(a,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(a,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(a,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(a,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(a,"Goalkeeper Saves")}));setAnalyzed(false);setLiveApiInfo(`${g.home} × ${g.away}: dados carregados. Você ainda pode editar manualmente.`)}finally{setLiveApiLoading(false)}};
   const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});setNotice("Análise salva somente no seu histórico privado.")};
-  useEffect(()=>{setApiStandings({});setApiInfo("Classificação calculada pelo CSV");if(leagueId)checkFreeApi()},[leagueId]);
+  useEffect(()=>{setApiStandings({});setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi()},[leagueId]);
   const doLogin = async () => {
     const r = await fetch("/api/auth/login", {
         method: "POST",
@@ -863,6 +868,7 @@ export default function Home() {
                 {visibleStandings.map(r=><div className="standing-row" key={r.team}>
                   <span className="position">{standings.findIndex(x=>x.team===r.team)+1}</span><b>{r.team}</b><strong>{r.p}</strong><span>{r.j}</span><span>{r.v}</span><span>{r.e}</span><span>{r.d}</span><span>{r.gp}</span><span>{r.gc}</span><span className={r.sg>=0?"positive":"negative"}>{r.sg>0?"+":""}{r.sg}</span><Form values={r.form}/>
                 </div>)}
+                {!visibleStandings.length&&<div className="api-standing-empty">Aguardando a classificação atual da API. Os resultados do CSV não são usados nesta tabela.</div>}
               </div>
             </section>
           )}
@@ -1014,8 +1020,9 @@ export default function Home() {
                 </section>
                 {h2h.length>0&&<section className="panel compact-panel"><div className="panel-head"><i className="blue">↔</i><div><h3>Últimos confrontos diretos</h3><p>Resultados encontrados na liga selecionada</p></div></div><div className="h2h-list">{h2h.map((g,i)=><div key={i}><small>{g.date||g.round||`Jogo ${i+1}`}</small><b>{g.home} {g.hg} × {g.ag} {g.away}</b></div>)}</div></section>}
                 <section className="panel compact-panel referee-panel">
-                  <div className="panel-head"><i className="orange">▰</i><div><h3>Estatísticas do árbitro</h3><p>Cartões, faltas e tendência disciplinar</p></div></div>
-                  {referees.length?<><Select label="Árbitro" value={refName} set={setSelectedReferee} placeholder="Selecionar árbitro" options={referees.map(x=>[x,x])}/>{refereeStats&&<div className="ref-stats"><article><small>Jogos</small><b>{refereeStats.games}</b></article><article><small>Amarelos/jogo</small><b>{refereeStats.yellow.toFixed(2)}</b></article><article><small>Vermelhos/jogo</small><b>{refereeStats.red.toFixed(2)}</b></article><article><small>Cartões/jogo</small><b>{refereeStats.cards.toFixed(2)}</b></article><article><small>Faltas/jogo</small><b>{refereeStats.fouls?refereeStats.fouls.toFixed(1):"—"}</b></article><article><small>Over 3,5</small><b>{refereeStats.over35.toFixed(0)}%</b></article><article><small>Over 4,5</small><b>{refereeStats.over45.toFixed(0)}%</b></article><article><small>Over 5,5</small><b>{refereeStats.over55.toFixed(0)}%</b></article></div>}</>:<p className="nodata">Este CSV não contém a coluna Referee. Ao importar um CSV com árbitros, esta área será preenchida automaticamente.</p>}
+                  <div className="panel-head"><i className="orange">▰</i><div><h3>Análise completa da arbitragem</h3><p>Histórico disciplinar, faltas, linhas de cartões e perfil de rigor</p></div></div>
+                  {referees.length?<Select label="Selecionar árbitro" value={refName} set={setSelectedReferee} placeholder="Selecionar árbitro" options={referees.map(x=>[x,x])}/>:<div className="ref-average-note"><b>Média geral da arbitragem da liga</b><span>O CSV não identifica os árbitros; os números abaixo consideram todos os jogos importados.</span></div>}
+                  {refereeStats&&<><div className="ref-profile"><div><small>PERFIL</small><strong>{refereeStats.cards>=leagueCards*1.15?"Rigoroso":refereeStats.cards<=leagueCards*.85?"Pouco rigoroso":"Moderado"}</strong></div><div><small>COMPARAÇÃO COM A LIGA</small><strong className={refereeStats.cards>=leagueCards?"positive":""}>{refereeStats.cards>=leagueCards?"+":""}{(refereeStats.cards-leagueCards).toFixed(2)} cartão/jogo</strong></div><div><small>ÚLTIMOS 5 JOGOS</small><span className="recent-cards">{refereeStats.recent.map((x,i)=><i key={i}>{x}</i>)}</span></div></div><div className="ref-stats"><article><small>Jogos apitados</small><b>{refereeStats.games}</b></article><article><small>Faltas/jogo</small><b>{refereeStats.fouls?refereeStats.fouls.toFixed(1):"—"}</b></article><article><small>Amarelos/jogo</small><b>{refereeStats.yellow.toFixed(2)}</b></article><article><small>Vermelhos/jogo</small><b>{refereeStats.red.toFixed(2)}</b></article><article><small>Cartões/jogo</small><b>{refereeStats.cards.toFixed(2)}</b></article><article><small>Cartões mandante</small><b>{refereeStats.homeCards.toFixed(2)}</b></article><article><small>Cartões visitante</small><b>{refereeStats.awayCards.toFixed(2)}</b></article><article><small>Amarelos casa/fora</small><b>{refereeStats.homeYellow.toFixed(1)} / {refereeStats.awayYellow.toFixed(1)}</b></article><article><small>Over 3,5 cartões</small><b>{refereeStats.over35.toFixed(0)}%</b></article><article><small>Over 4,5 cartões</small><b>{refereeStats.over45.toFixed(0)}%</b></article><article><small>Over 5,5 cartões</small><b>{refereeStats.over55.toFixed(0)}%</b></article></div></>}
                 </section>
                 <div className="markets">
                   <Market
