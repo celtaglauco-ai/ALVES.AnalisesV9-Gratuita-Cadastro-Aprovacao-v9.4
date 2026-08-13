@@ -10,6 +10,9 @@ type UserRow = {
   status: "pending" | "approved" | "rejected" | "blocked";
   createdAt: number;
 };
+type TableMode = "TOTAL" | "HOME" | "AWAY";
+type StandingRow = { team:string; p:number; j:number; v:number; e:number; d:number; gp:number; gc:number; sg:number; form:("V"|"E"|"D")[] };
+type LiveApiGame={id:number;minute:number;status:string;league:string;country:string;home:string;away:string;hg:number;ag:number};
 const codes: Record<string, [string, string]> = {
   E0: ["Inglaterra", "Premier League"],
   E1: ["Inglaterra", "Championship"],
@@ -77,6 +80,9 @@ function parse(text: string) {
     .map((x) => row(x, delimiter))
     .filter((x) => get(x, "HomeTeam", "Home", "Mandante", "home_team"))
     .map((x) => ({
+      date: get(x, "Date", "Data"),
+      round: get(x, "Round", "Rodada", "Matchday"),
+      referee: get(x, "Referee", "Arbitro", "Árbitro"),
       home: get(x, "HomeTeam", "Home", "Mandante", "home_team"),
       away: get(x, "AwayTeam", "Away", "Visitante", "away_team"),
       hg: n(get(x, "FTHG", "HG", "home_score")),
@@ -91,6 +97,12 @@ function parse(text: string) {
       as: n(get(x, "AS")),
       hst: n(get(x, "HST")),
       ast: n(get(x, "AST")),
+      hf: n(get(x, "HF", "HomeFouls")),
+      af: n(get(x, "AF", "AwayFouls")),
+      hxg: n(get(x, "HxG", "HomeXG", "xGHome")),
+      axg: n(get(x, "AxG", "AwayXG", "xGAway")),
+      hp: n(get(x, "HP", "HomePossession", "PossessionHome")),
+      ap: n(get(x, "AP", "AwayPossession", "PossessionAway")),
     }));
   if (!games.length) throw Error("Nenhuma partida válida encontrada.");
   const first = row(r[1], delimiter),
@@ -102,6 +114,9 @@ function parse(text: string) {
       cards: has("HY") && has("AY"),
       shots: has("HS") && has("AS"),
       shotsOnTarget: has("HST") && has("AST"),
+      referees: has("Referee", "Arbitro", "Árbitro"),
+      xg: has("HxG", "HomeXG", "xGHome") && has("AxG", "AwayXG", "xGAway"),
+      possession: has("HP", "HomePossession", "PossessionHome") && has("AP", "AwayPossession", "PossessionAway"),
     };
   return {
     games,
@@ -121,6 +136,19 @@ function ident(file: string): [string, string, string] {
   return k
     ? [k, ...codes[k]]
     : ["CUSTOM", "País personalizado", "Liga personalizada"];
+}
+function resultFor(g: Game, team: string): "V"|"E"|"D" {
+  const own = g.home === team ? g.hg : g.ag, other = g.home === team ? g.ag : g.hg;
+  return own > other ? "V" : own < other ? "D" : "E";
+}
+function buildTable(games: Game[], mode: TableMode): StandingRow[] {
+  const teams=[...new Set(games.flatMap(g=>[g.home,g.away]))], map=new Map<string,StandingRow>();
+  teams.forEach(team=>map.set(team,{team,p:0,j:0,v:0,e:0,d:0,gp:0,gc:0,sg:0,form:[]}));
+  games.forEach(g=>{
+    const participants=mode==="HOME"?[g.home]:mode==="AWAY"?[g.away]:[g.home,g.away];
+    participants.forEach(team=>{const r=map.get(team)!;const home=g.home===team,own=home?g.hg:g.ag,other=home?g.ag:g.hg;r.j++;r.gp+=own;r.gc+=other;if(own>other){r.v++;r.p+=3}else if(own===other){r.e++;r.p++}else r.d++;r.form.push(resultFor(g,team));});
+  });
+  return [...map.values()].map(r=>({...r,sg:r.gp-r.gc,form:r.form.slice(-5)})).sort((a,b)=>b.p-a.p||b.sg-a.sg||b.gp-a.gp||a.team.localeCompare(b.team));
 }
 export default function Home() {
   const [tab, setTab] = useState<Tab>("pre"),
@@ -154,6 +182,14 @@ export default function Home() {
     [updateTarget, setUpdateTarget] = useState(""),
     [editingLeague, setEditingLeague] = useState<League | null>(null),
     [analyzed, setAnalyzed] = useState(false),
+    [tableMode, setTableMode] = useState<TableMode>("TOTAL"),
+    [teamSearch, setTeamSearch] = useState(""),
+    [selectedReferee, setSelectedReferee] = useState(""),
+    [apiInfo, setApiInfo] = useState("Classificação calculada pelo CSV"),
+    [apiStandings, setApiStandings] = useState<Partial<Record<TableMode,StandingRow[]>>>({}),
+    [liveApiGames, setLiveApiGames] = useState<LiveApiGame[]>([]),
+    [liveApiInfo, setLiveApiInfo] = useState("Clique para consultar os jogos ao vivo"),
+    [liveApiLoading, setLiveApiLoading] = useState(false),
     [live, setLive] = useState({
       minute: 35,
       hg: 0,
@@ -182,6 +218,8 @@ export default function Home() {
       pressureAway: 0,
       xgHome: 0,
       xgAway: 0,
+      savesHome: 0,
+      savesAway: 0,
     }),
     [ask, setAsk] = useState(""),
     [loading, setLoading] = useState(false),
@@ -250,6 +288,10 @@ export default function Home() {
       cards: avg(ca),
       shots: avg(g.map((x) => (venue === "home" ? x.hs : x.as))),
       onTarget: avg(g.map((x) => (venue === "home" ? x.hst : x.ast))),
+      scored: avg(g.map((x) => (venue === "home" ? x.hg : x.ag))),
+      conceded: avg(g.map((x) => (venue === "home" ? x.ag : x.hg))),
+      xg: avg(g.map((x) => venue === "home" ? (x.hxg || 0) : (x.axg || 0))),
+      possession: avg(g.map((x) => venue === "home" ? (x.hp || 0) : (x.ap || 0))),
       over25: pct(go, (x) => x >= 3),
       btts: pct(g, (x) => x.hg > 0 && x.ag > 0),
       overCorners: pct(co, (x) => x >= 9),
@@ -338,6 +380,35 @@ export default function Home() {
           ),
       ),
     );
+  const localStandings=useMemo(()=>league?buildTable(league.games,tableMode):[],[league,tableMode]),
+    standings=apiStandings[tableMode]||localStandings,
+    visibleStandings=standings.filter(x=>x.team.toLowerCase().includes(teamSearch.toLowerCase())),
+    homeVenueTable=league?buildTable(league.games,"HOME"):[], awayVenueTable=awayLeague?buildTable(awayLeague.games,"AWAY"):[],
+    homeStanding=homeVenueTable.find(x=>x.team===home), awayStanding=awayVenueTable.find(x=>x.team===away),
+    referees=useMemo(()=>league?[...new Set(league.games.map(g=>g.referee).filter((x):x is string=>!!x))].sort():[],[league]),
+    refName=selectedReferee||referees[0]||"",
+    refereeGames=league?.games.filter(g=>g.referee===refName)||[],
+    refereeStats=refereeGames.length?{
+      games:refereeGames.length,
+      yellow:avg(refereeGames.map(g=>g.hy+g.ay)),
+      red:avg(refereeGames.map(g=>g.hr+g.ar)),
+      cards:avg(refereeGames.map(g=>g.hy+g.ay+g.hr+g.ar)),
+      fouls:avg(refereeGames.map(g=>(g.hf||0)+(g.af||0))),
+      over35:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=4),
+      over45:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=5),
+      over55:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=6),
+    }:null,
+    h2h=league&&league.id===awayLeague?.id?league.games.filter(g=>(g.home===home&&g.away===away)||(g.home===away&&g.away===home)).slice(-5):[];
+  const checkFreeApi=async()=>{
+    if(!league)return;
+    setApiInfo("Consultando API gratuita...");
+    const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(league.id)}`,{cache:"no-store"}),d=await r.json();
+    if(d.available){setApiStandings(d.tables||{});setApiInfo(`Atualizado pela ${d.source} • ${new Date(d.updatedAt).toLocaleTimeString("pt-BR")}`)}else{setApiStandings({});setApiInfo(d.reason||"Usando classificação completa do CSV")}
+  };
+  const fetchLiveGames=async()=>{setLiveApiLoading(true);setLiveApiInfo("Consultando jogos ao vivo...");try{const r=await fetch("/api/live",{cache:"no-store"}),d=await r.json();if(d.available){setLiveApiGames(d.games||[]);setLiveApiInfo(`${d.games?.length||0} jogos ao vivo • cota restante: ${d.remaining||"—"}`)}else setLiveApiInfo(d.reason||"API indisponível")}finally{setLiveApiLoading(false)}};
+  const loadLiveStats=async(g:LiveApiGame)=>{setLiveApiLoading(true);try{const r=await fetch(`/api/live?id=${g.id}`,{cache:"no-store"}),d=await r.json(),teams=d.statistics||[];const values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value]));const h=values(0),a=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%",""));setLive(x=>({...x,minute:g.minute||x.minute,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(a,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(a,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(a,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(a,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(a,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(a,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(a,"Goalkeeper Saves")}));setAnalyzed(false);setLiveApiInfo(`${g.home} × ${g.away}: dados carregados. Você ainda pode editar manualmente.`)}finally{setLiveApiLoading(false)}};
+  const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});setNotice("Análise salva somente no seu histórico privado.")};
+  useEffect(()=>{setApiStandings({});setApiInfo("Classificação calculada pelo CSV");if(leagueId)checkFreeApi()},[leagueId]);
   const doLogin = async () => {
     const r = await fetch("/api/auth/login", {
         method: "POST",
@@ -520,7 +591,7 @@ export default function Home() {
         <div className="access-card">
           <div className="access-logo">⚽</div>
           <h1>
-            ALVES.<b>AnalisesV10</b>
+            ALVES.<b>AnalisesV11</b>
           </h1>
           <p>Verificando acesso seguro...</p>
         </div>
@@ -532,7 +603,7 @@ export default function Home() {
         <div className="access-card">
           <div className="access-logo">⚽</div>
           <h1>
-            ALVES.<b>AnalisesV10</b>
+            ALVES.<b>AnalisesV11</b>
           </h1>
           <p>Pré-jogo, ao vivo e inteligência estatística.</p>
           <div className="access-tabs">
@@ -647,7 +718,7 @@ export default function Home() {
           <span>⚽</span>
           <div>
             <h1>
-              ALVES.<b>AnalisesV10</b>
+              ALVES.<b>AnalisesV11</b>
             </h1>
             <p>Estatísticas profissionais de futebol</p>
           </div>
@@ -775,7 +846,32 @@ export default function Home() {
               </section>
             </>
           )}
+          {(tab === "pre" || tab === "live") && league && (
+            <section className="panel standings-panel">
+              <div className="standings-head">
+                <div><h3>🏆 Classificação</h3><p>{apiInfo}</p></div>
+                <div className="standings-tools">
+                  <input value={teamSearch} onChange={e=>setTeamSearch(e.target.value)} placeholder="Buscar time..." />
+                  <button onClick={checkFreeApi}>↻ Verificar API grátis</button>
+                </div>
+              </div>
+              <div className="standing-tabs">
+                {(["TOTAL","HOME","AWAY"] as TableMode[]).map(m=><button key={m} className={tableMode===m?"selected":""} onClick={()=>setTableMode(m)}>{m==="TOTAL"?"GERAL":m==="HOME"?"MANDANTE":"VISITANTE"}</button>)}
+              </div>
+              <div className="standing-table">
+                <div className="standing-row standing-th"><span>#</span><span>TIME</span><span>P</span><span>J</span><span>V</span><span>E</span><span>D</span><span>GP</span><span>GC</span><span>SG</span><span>FORMA</span></div>
+                {visibleStandings.map(r=><div className="standing-row" key={r.team}>
+                  <span className="position">{standings.findIndex(x=>x.team===r.team)+1}</span><b>{r.team}</b><strong>{r.p}</strong><span>{r.j}</span><span>{r.v}</span><span>{r.e}</span><span>{r.d}</span><span>{r.gp}</span><span>{r.gc}</span><span className={r.sg>=0?"positive":"negative"}>{r.sg>0?"+":""}{r.sg}</span><Form values={r.form}/>
+                </div>)}
+              </div>
+            </section>
+          )}
           {tab === "live" && (
+            <>
+            <section className="panel live-api-panel">
+              <div className="panel-head"><i className="green">●</i><div><h3>Jogos ao vivo pela API</h3><p>{liveApiInfo}</p></div><button disabled={liveApiLoading} onClick={fetchLiveGames}>↻ Atualizar ao vivo</button></div>
+              {liveApiGames.length?<div className="live-api-list">{liveApiGames.map(g=><article key={g.id}><small>{g.country} • {g.league} • {g.minute||0}&apos;</small><b>{g.home} {g.hg} × {g.ag} {g.away}</b><button disabled={liveApiLoading} onClick={()=>loadLiveStats(g)}>Carregar estatísticas</button></article>)}</div>:<p className="nodata">Nenhuma partida carregada. A análise manual abaixo continua disponível.</p>}
+            </section>
             <section className="panel">
               <div className="panel-head">
                 <i className="red">●</i>
@@ -815,6 +911,8 @@ export default function Home() {
                   pressureAway: "Pressão fora",
                   xgHome: "xG casa",
                   xgAway: "xG fora",
+                  savesHome: "Defesas goleiro casa",
+                  savesAway: "Defesas goleiro fora",
                 }).map(([k, v]) => (
                   <label key={k}>
                     {v}
@@ -870,6 +968,8 @@ export default function Home() {
                       pressureAway: 0,
                       xgHome: 0,
                       xgAway: 0,
+                      savesHome: 0,
+                      savesAway: 0,
                     });
                   }}
                 >
@@ -877,6 +977,7 @@ export default function Home() {
                 </button>
               </div>
             </section>
+            </>
           )}
           {(tab === "pre" || (tab === "live" && analyzed)) &&
             (!ready ? (
@@ -894,6 +995,28 @@ export default function Home() {
                     <b>{away}</b>
                   </div>
                 </div>
+                <section className="comparison-panel">
+                  <div className="comparison-title"><div><h3>Comparativo pré-jogo</h3><span>Casa como mandante × visitante como visitante</span></div>{!admin&&<button onClick={()=>savePrivateHistory(tab==="live"?"live":"pre")}>Salvar no meu histórico</button>}</div>
+                  <div className="team-form-grid">
+                    <article><small>{home} • posição em casa</small><strong>#{homeVenueTable.findIndex(x=>x.team===home)+1}</strong><Form values={homeStanding?.form||[]}/></article>
+                    <article><small>{away} • posição fora</small><strong>#{awayVenueTable.findIndex(x=>x.team===away)+1}</strong><Form values={awayStanding?.form||[]}/></article>
+                  </div>
+                  <div className="compare-grid">
+                    <Compare label="Média de gols marcados" left={a!.scored} right={b!.scored}/>
+                    <Compare label="Média de gols sofridos" left={a!.conceded} right={b!.conceded}/>
+                    <Compare label="Expectativa de gol (xG)" left={a!.xg} right={b!.xg} unavailable={!league?.quality?.xg||!awayLeague?.quality?.xg}/>
+                    <Compare label="Posse de bola média" left={a!.possession} right={b!.possession} suffix="%" unavailable={!league?.quality?.possession||!awayLeague?.quality?.possession}/>
+                    <Compare label="Finalizações" left={a!.shots} right={b!.shots}/>
+                    <Compare label="Chutes no gol" left={a!.onTarget} right={b!.onTarget}/>
+                    <Compare label="Escanteios totais" left={a!.corners} right={b!.corners}/>
+                    <Compare label="Cartões totais" left={a!.cards} right={b!.cards}/>
+                  </div>
+                </section>
+                {h2h.length>0&&<section className="panel compact-panel"><div className="panel-head"><i className="blue">↔</i><div><h3>Últimos confrontos diretos</h3><p>Resultados encontrados na liga selecionada</p></div></div><div className="h2h-list">{h2h.map((g,i)=><div key={i}><small>{g.date||g.round||`Jogo ${i+1}`}</small><b>{g.home} {g.hg} × {g.ag} {g.away}</b></div>)}</div></section>}
+                <section className="panel compact-panel referee-panel">
+                  <div className="panel-head"><i className="orange">▰</i><div><h3>Estatísticas do árbitro</h3><p>Cartões, faltas e tendência disciplinar</p></div></div>
+                  {referees.length?<><Select label="Árbitro" value={refName} set={setSelectedReferee} placeholder="Selecionar árbitro" options={referees.map(x=>[x,x])}/>{refereeStats&&<div className="ref-stats"><article><small>Jogos</small><b>{refereeStats.games}</b></article><article><small>Amarelos/jogo</small><b>{refereeStats.yellow.toFixed(2)}</b></article><article><small>Vermelhos/jogo</small><b>{refereeStats.red.toFixed(2)}</b></article><article><small>Cartões/jogo</small><b>{refereeStats.cards.toFixed(2)}</b></article><article><small>Faltas/jogo</small><b>{refereeStats.fouls?refereeStats.fouls.toFixed(1):"—"}</b></article><article><small>Over 3,5</small><b>{refereeStats.over35.toFixed(0)}%</b></article><article><small>Over 4,5</small><b>{refereeStats.over45.toFixed(0)}%</b></article><article><small>Over 5,5</small><b>{refereeStats.over55.toFixed(0)}%</b></article></div>}</>:<p className="nodata">Este CSV não contém a coluna Referee. Ao importar um CSV com árbitros, esta área será preenchida automaticamente.</p>}
+                </section>
                 <div className="markets">
                   <Market
                     icon="⚽"
@@ -1410,6 +1533,9 @@ function Empty({ has }: { has: boolean }) {
     </div>
   );
 }
+
+function Form({values}:{values:("V"|"E"|"D")[]}){return <span className="form-badges">{values.length?values.map((x,i)=><i key={i} className={`form-${x.toLowerCase()}`}>{x}</i>):<em>Sem jogos</em>}</span>}
+function Compare({label,left,right,suffix="",unavailable=false}:{label:string;left:number;right:number;suffix?:string;unavailable?:boolean}){const max=Math.max(left,right,1),lp=left/max*100,rp=right/max*100;return <article className="compare-card"><h4>{label}</h4>{unavailable?<p className="no-stat">Não disponível neste CSV</p>:<><div className="compare-values"><b>{left.toFixed(2)}{suffix}</b><b>{right.toFixed(2)}{suffix}</b></div><div className="dual-bar"><i style={{width:`${lp/2}%`}}/><i style={{width:`${rp/2}%`}}/></div></>}</article>}
 
 function UserAdmin() {
   const [users, setUsers] = useState<UserRow[]>([]);

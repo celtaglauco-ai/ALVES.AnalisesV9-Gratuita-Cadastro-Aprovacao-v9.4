@@ -30,7 +30,18 @@ export function initDb() {
   password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
   created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
   CONSTRAINT users_status_check CHECK (status IN ('pending','approved','rejected','blocked'))
- ); ALTER TABLE leagues ADD COLUMN IF NOT EXISTS data_quality JSONB NOT NULL DEFAULT '{"goals":true,"corners":true,"cards":true,"shots":true,"shotsOnTarget":true}'::jsonb`,
+ ); ALTER TABLE leagues ADD COLUMN IF NOT EXISTS data_quality JSONB NOT NULL DEFAULT '{"goals":true,"corners":true,"cards":true,"shots":true,"shotsOnTarget":true}'::jsonb;
+ CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_ci ON users (lower(email));
+ CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at BIGINT NOT NULL
+ );
+ CREATE TABLE IF NOT EXISTS analysis_history (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL, league_id TEXT, home TEXT NOT NULL, away TEXT NOT NULL,
+  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at BIGINT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS analysis_history_user_idx ON analysis_history(user_id,created_at DESC)`,
       )
       .then(() => undefined);
   return globalDb.alvesReady;

@@ -1,4 +1,7 @@
 export type Game = {
+  date?: string;
+  round?: string;
+  referee?: string;
   home: string;
   away: string;
   hg: number;
@@ -13,6 +16,12 @@ export type Game = {
   as: number;
   hst: number;
   ast: number;
+  hf?: number;
+  af?: number;
+  hxg?: number;
+  axg?: number;
+  hp?: number;
+  ap?: number;
 };
 export type DataQuality = {
   goals: boolean;
@@ -20,6 +29,9 @@ export type DataQuality = {
   cards: boolean;
   shots: boolean;
   shotsOnTarget: boolean;
+  referees?: boolean;
+  xg?: boolean;
+  possession?: boolean;
 };
 export type League = {
   id: string;
