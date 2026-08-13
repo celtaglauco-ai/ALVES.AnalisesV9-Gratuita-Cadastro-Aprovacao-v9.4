@@ -1,0 +1,53 @@
+ALVES.AnalisesV9 Profissional — versão totalmente gratuita
+
+PARTE 1 — BANCO GRATUITO PERMANENTE NO NEON
+
+1. Crie uma conta gratuita em https://console.neon.tech
+2. Crie um projeto PostgreSQL no plano Free.
+3. Abra o projeto e copie a Connection string completa.
+4. Mantenha o final ?sslmode=require na conexão.
+
+PARTE 2 — IA GRATUITA
+
+1. Crie uma conta em https://openrouter.ai
+2. Abra https://openrouter.ai/keys e gere uma API Key.
+3. Não compre créditos. A V9 usa exclusivamente openrouter/free.
+
+PARTE 3 — PUBLICAR GRATUITAMENTE NO RENDER
+
+1. Envie todos os arquivos desta pasta para um repositório GitHub.
+2. No Render, escolha New > Blueprint e conecte o repositório.
+3. Quando o Render solicitar DATABASE_URL, cole a Connection string do Neon.
+4. Quando solicitar OPENROUTER_API_KEY, cole a chave gratuita do OpenRouter.
+5. Escolha o plano Free e conclua o Blueprint.
+6. Aguarde o status Live e abra o endereço fornecido pelo Render.
+
+O SESSION_SECRET é criado automaticamente e sem custo pelo Render.
+O CSV fica no PostgreSQL e é compartilhado entre todos os acessos do site.
+Somente o administrador autenticado possui rotas para adicionar ou excluir ligas.
+Visitantes veem apenas Pré-jogo, Ao vivo e Análise por IA.
+
+COMO FUNCIONA O CADASTRO
+
+1. A pessoa abre o site e escolhe Criar cadastro.
+2. O cadastro fica como Aguardando e ainda não libera as análises.
+3. Entre com a conta administrativa e abra Painel Admin.
+4. Em Solicitações e usuários, escolha Aceitar, Recusar, Bloquear ou Excluir.
+5. Depois de aceita, a pessoa entra usando o e-mail e a senha cadastrados.
+
+As senhas dos usuários são protegidas por hash e não aparecem no painel.
+
+Esta versão NÃO cria o PostgreSQL temporário do Render. Ela usa o Neon Free,
+evitando a expiração de 30 dias do banco gratuito do Render.
+
+A IA usa o roteador gratuito openrouter/free e foi limitada, por instrução de sistema,
+a estatísticas das partidas selecionadas. A disponibilidade e os modelos gratuitos
+dependem do OpenRouter e podem variar. Ao atingir o limite gratuito, aguarde a
+renovação da cota; a aplicação não troca automaticamente para modelos pagos.
+
+LIMITES DOS PLANOS GRATUITOS
+
+- O Render pode adormecer o site após inatividade; o primeiro acesso pode demorar.
+- O Neon Free possui limites de armazenamento e processamento.
+- O OpenRouter Free possui limite diário e pode ficar temporariamente indisponível.
+- Não é necessário cadastrar cartão para o funcionamento descrito neste projeto.
