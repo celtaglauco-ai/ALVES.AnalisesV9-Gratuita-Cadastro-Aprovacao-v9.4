@@ -1,6 +1,6 @@
 "use client";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import type { Game, League } from "@/lib/types";
+import type { DataQuality, Game, League } from "@/lib/types";
 type Tab = "pre" | "live" | "ai" | "admin";
 type Msg = { role: "user" | "assistant"; content: string };
 type UserRow = {
@@ -33,13 +33,13 @@ const n = (v: unknown) => Number(String(v ?? "").replace(",", ".")) || 0,
     a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0,
   pct = <T,>(a: T[], f: (x: T) => boolean) =>
     a.length ? (a.filter(f).length / a.length) * 100 : 0;
-function row(s: string) {
+function row(s: string, delimiter = ",") {
   const a: string[] = [],
     q = { v: false };
   let c = "";
   for (const x of s) {
     if (x === '"') q.v = !q.v;
-    else if (x === "," && !q.v) {
+    else if (x === delimiter && !q.v) {
       a.push(c);
       c = "";
     } else c += x;
@@ -52,21 +52,35 @@ function parse(text: string) {
       .replace(/^\uFEFF/, "")
       .split(/\r?\n/)
       .filter(Boolean),
-    h = row(r[0] || "").map((x) => x.toLowerCase());
+    delimiter =
+      (r[0].match(/;/g) || []).length > (r[0].match(/,/g) || []).length
+        ? ";"
+        : ",",
+    h = row(r[0] || "", delimiter).map((x) =>
+      x.toLowerCase().replace(/[ _-]/g, ""),
+    );
   if (r.length < 2) throw Error("O CSV precisa conter cabeçalho e jogos.");
   const get = (x: string[], ...k: string[]) => {
-    const i = k.map((y) => h.indexOf(y.toLowerCase())).find((y) => y >= 0);
+    const i = k
+      .map((y) => h.indexOf(y.toLowerCase().replace(/[ _-]/g, "")))
+      .find((y) => y >= 0);
     return i === undefined ? "" : x[i];
   };
-  return r
+  if (
+    !get(h, "HomeTeam", "Home", "Mandante", "home_team") &&
+    !h.includes("hometeam") &&
+    !h.includes("home")
+  )
+    throw Error("Colunas HomeTeam/AwayTeam ou Home/Away não encontradas.");
+  const games = r
     .slice(1)
-    .map(row)
-    .filter((x) => get(x, "HomeTeam", "Mandante"))
+    .map((x) => row(x, delimiter))
+    .filter((x) => get(x, "HomeTeam", "Home", "Mandante", "home_team"))
     .map((x) => ({
-      home: get(x, "HomeTeam", "Mandante"),
-      away: get(x, "AwayTeam", "Visitante"),
-      hg: n(get(x, "FTHG")),
-      ag: n(get(x, "FTAG")),
+      home: get(x, "HomeTeam", "Home", "Mandante", "home_team"),
+      away: get(x, "AwayTeam", "Away", "Visitante", "away_team"),
+      hg: n(get(x, "FTHG", "HG", "home_score")),
+      ag: n(get(x, "FTAG", "AG", "away_score")),
       hc: n(get(x, "HC")),
       ac: n(get(x, "AC")),
       hy: n(get(x, "HY")),
@@ -78,6 +92,26 @@ function parse(text: string) {
       hst: n(get(x, "HST")),
       ast: n(get(x, "AST")),
     }));
+  if (!games.length) throw Error("Nenhuma partida válida encontrada.");
+  const first = row(r[1], delimiter),
+    has = (...x: string[]) =>
+      x.some((k) => h.includes(k.toLowerCase().replace(/[ _-]/g, ""))),
+    quality: DataQuality = {
+      goals: has("FTHG", "HG", "home_score") && has("FTAG", "AG", "away_score"),
+      corners: has("HC") && has("AC"),
+      cards: has("HY") && has("AY"),
+      shots: has("HS") && has("AS"),
+      shotsOnTarget: has("HST") && has("AST"),
+    };
+  return {
+    games,
+    quality,
+    meta: {
+      country: get(first, "Country", "Pais", "País"),
+      name: get(first, "League", "Liga", "Competition"),
+      season: get(first, "Season", "Temporada"),
+    },
+  };
 }
 function ident(file: string): [string, string, string] {
   const u = file.toUpperCase(),
@@ -92,6 +126,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("pre"),
     [leagues, setLeagues] = useState<League[]>([]),
     [leagueId, setLeagueId] = useState(""),
+    [awayLeagueId, setAwayLeagueId] = useState(""),
     [home, setHome] = useState(""),
     [away, setAway] = useState(""),
     [admin, setAdmin] = useState(false),
@@ -109,7 +144,16 @@ export default function Home() {
     [notice, setNotice] = useState(""),
     [csv, setCsv] = useState(""),
     [fileName, setFileName] = useState(""),
-    [season, setSeason] = useState(""),
+    [leagueMeta, setLeagueMeta] = useState({
+      country: "",
+      name: "",
+      season: "",
+      code: "",
+    }),
+    [importMode, setImportMode] = useState<"create" | "update">("create"),
+    [updateTarget, setUpdateTarget] = useState(""),
+    [editingLeague, setEditingLeague] = useState<League | null>(null),
+    [analyzed, setAnalyzed] = useState(false),
     [live, setLive] = useState({
       minute: 35,
       hg: 0,
@@ -120,6 +164,24 @@ export default function Home() {
       sot: 3,
       yellow: 2,
       red: 0,
+      attacksHome: 0,
+      attacksAway: 0,
+      dangerHome: 0,
+      dangerAway: 0,
+      shotsHome: 0,
+      shotsAway: 0,
+      sotHome: 0,
+      sotAway: 0,
+      yellowHome: 0,
+      yellowAway: 0,
+      redHome: 0,
+      redAway: 0,
+      possessionHome: 50,
+      possessionAway: 50,
+      pressureHome: 0,
+      pressureAway: 0,
+      xgHome: 0,
+      xgAway: 0,
     }),
     [ask, setAsk] = useState(""),
     [loading, setLoading] = useState(false),
@@ -146,20 +208,36 @@ export default function Home() {
       .finally(() => setAuthReady(true));
   }, []);
   const league = leagues.find((x) => x.id === leagueId),
+    awayLeague = leagues.find((x) => x.id === awayLeagueId),
     teams = useMemo(
       () =>
         league
           ? [...new Set(league.games.flatMap((g) => [g.home, g.away]))].sort()
           : [],
       [league],
+    ),
+    awayTeams = useMemo(
+      () =>
+        awayLeague
+          ? [
+              ...new Set(awayLeague.games.flatMap((g) => [g.home, g.away])),
+            ].sort()
+          : [],
+      [awayLeague],
     );
   useEffect(() => {
     setHome("");
-    setAway("");
   }, [leagueId]);
-  const stats = (team: string, venue: "home" | "away") => {
-    if (!league) return null;
-    const g = league.games
+  useEffect(() => {
+    setAway("");
+  }, [awayLeagueId]);
+  const stats = (
+    source: League | undefined,
+    team: string,
+    venue: "home" | "away",
+  ) => {
+    if (!source) return null;
+    const g = source.games
         .filter((x) => (venue === "home" ? x.home === team : x.away === team))
         .slice(-12),
       go = g.map((x) => x.hg + x.ag),
@@ -178,9 +256,19 @@ export default function Home() {
       overCards: pct(ca, (x) => x >= 5),
     };
   };
-  const a = home ? stats(home, "home") : null,
-    b = away ? stats(away, "away") : null,
-    ready = !!(league && home && away && home !== away && a && b),
+  const a = home ? stats(league, home, "home") : null,
+    b = away ? stats(awayLeague, away, "away") : null,
+    ready = !!(
+      league &&
+      awayLeague &&
+      home &&
+      away &&
+      home !== away &&
+      a &&
+      b &&
+      a.games &&
+      b.games
+    ),
     base = ready
       ? {
           goals: (a!.over25 + b!.over25) / 2,
@@ -195,18 +283,61 @@ export default function Home() {
             ...base,
             goals: Math.min(
               96,
-              base.goals * 0.55 + live.sot * 5 + live.shots * 1.2,
+              base.goals * 0.4 +
+                (live.sot + live.sotHome + live.sotAway) * 5 +
+                (live.shots + live.shotsHome + live.shotsAway) * 1.2 +
+                (live.xgHome + live.xgAway) * 10 +
+                (live.dangerHome + live.dangerAway) * 0.18,
             ),
             corners: Math.min(
               96,
-              base.corners * 0.55 + (live.hc + live.ac) * 6,
+              base.corners * 0.4 +
+                (live.hc + live.ac) * 6 +
+                (live.dangerHome + live.dangerAway) * 0.25,
             ),
             cards: Math.min(
               96,
-              base.cards * 0.55 + (live.yellow + live.red * 2) * 8,
+              base.cards * 0.4 +
+                (live.yellow +
+                  live.yellowHome +
+                  live.yellowAway +
+                  (live.red + live.redHome + live.redAway) * 2) *
+                  8,
             ),
           }
-        : base;
+        : base,
+    livePressureHome =
+      live.dangerHome * 1.4 +
+      live.sotHome * 5 +
+      live.pressureHome * 0.8 +
+      live.xgHome * 12,
+    livePressureAway =
+      live.dangerAway * 1.4 +
+      live.sotAway * 5 +
+      live.pressureAway * 0.8 +
+      live.xgAway * 12,
+    pressureLeader =
+      livePressureHome > livePressureAway * 1.15
+        ? "time da casa"
+        : livePressureAway > livePressureHome * 1.15
+          ? "time visitante"
+          : "equilibrada",
+    liveConfidence = Math.round(
+      Math.min(
+        92,
+        45 +
+          (a?.games || 0) +
+          (b?.games || 0) +
+          Math.min(
+            25,
+            (live.shotsHome +
+              live.shotsAway +
+              live.dangerHome +
+              live.dangerAway) /
+              8,
+          ),
+      ),
+    );
   const doLogin = async () => {
     const r = await fetch("/api/auth/login", {
         method: "POST",
@@ -250,30 +381,53 @@ export default function Home() {
     if (!f) return;
     setFileName(f.name);
     const r = new FileReader();
-    r.onload = () => setCsv(String(r.result || ""));
+    r.onload = () => {
+      const text = String(r.result || "");
+      setCsv(text);
+      try {
+        const p = parse(text);
+        setLeagueMeta((m) => ({
+          country: p.meta.country || m.country,
+          name: p.meta.name || m.name,
+          season: p.meta.season || m.season,
+          code:
+            m.code ||
+            `${p.meta.country}-${p.meta.name}`
+              .replace(/[^a-z0-9]+/gi, "-")
+              .toUpperCase(),
+        }));
+        setNotice(
+          `${p.games.length} partidas reconhecidas. Confira o nome da liga.`,
+        );
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "CSV inválido.");
+      }
+    };
     r.readAsText(f);
   };
   const save = async () => {
     try {
-      const games = parse(csv),
-        [code, country, name] = ident(fileName),
-        id = (
-          code === "CUSTOM" ? `${name}-${season || "atual"}` : code
-        ).toLowerCase(),
-        item: League = {
-          id,
-          code,
-          country,
-          name,
-          season: season || "Atual",
-          fileName,
-          games,
-          updatedAt: Date.now(),
-        };
+      const parsed = parse(csv);
+      if (!leagueMeta.country || !leagueMeta.name || !leagueMeta.season)
+        throw Error("Informe país, nome da liga e temporada.");
+      if (importMode === "update" && !updateTarget)
+        throw Error("Escolha a liga que será atualizada.");
+      if (
+        importMode === "update" &&
+        !confirm("Substituir somente o CSV da liga escolhida?")
+      )
+        return;
       const r = await fetch("/api/admin/leagues", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(item),
+          body: JSON.stringify({
+            action: importMode,
+            targetId: updateTarget,
+            ...leagueMeta,
+            fileName,
+            games: parsed.games,
+            quality: parsed.quality,
+          }),
         }),
         d = await r.json();
       if (r.status === 401) {
@@ -282,14 +436,32 @@ export default function Home() {
         throw Error("Sua sessão expirou.");
       }
       if (!r.ok) throw Error(d.error);
-      setNotice(`✓ ${name} salva com ${games.length} jogos.`);
+      setNotice(
+        importMode === "create"
+          ? `✓ ${leagueMeta.name} cadastrada sem substituir outras ligas.`
+          : `✓ ${leagueMeta.name} atualizada.`,
+      );
       setCsv("");
       setFileName("");
-      setSeason("");
+      setLeagueMeta({ country: "", name: "", season: "", code: "" });
+      setUpdateTarget("");
       await load();
     } catch (e) {
       setNotice(e instanceof Error ? e.message : "Erro ao importar CSV.");
     }
+  };
+  const editLeague = async () => {
+    if (!editingLeague) return;
+    const r = await fetch("/api/admin/leagues", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingLeague),
+      }),
+      d = await r.json();
+    if (!r.ok) return setNotice(d.error);
+    setEditingLeague(null);
+    setNotice("Liga editada sem perder os jogos.");
+    await load();
   };
   const del = async (id: string) => {
     if (!confirm("Excluir esta liga do banco?")) return;
@@ -308,7 +480,8 @@ export default function Home() {
     try {
       const context = ready
           ? {
-              league: league?.name,
+              homeLeague: league?.name,
+              awayLeague: awayLeague?.name,
               country: league?.country,
               season: league?.season,
               mode: tab,
@@ -347,7 +520,7 @@ export default function Home() {
         <div className="access-card">
           <div className="access-logo">⚽</div>
           <h1>
-            ALVES.<b>AnalisesV9</b>
+            ALVES.<b>AnalisesV10</b>
           </h1>
           <p>Verificando acesso seguro...</p>
         </div>
@@ -359,7 +532,7 @@ export default function Home() {
         <div className="access-card">
           <div className="access-logo">⚽</div>
           <h1>
-            ALVES.<b>AnalisesV9</b>
+            ALVES.<b>AnalisesV10</b>
           </h1>
           <p>Pré-jogo, ao vivo e inteligência estatística.</p>
           <div className="access-tabs">
@@ -474,7 +647,7 @@ export default function Home() {
           <span>⚽</span>
           <div>
             <h1>
-              ALVES.<b>AnalisesV9</b>
+              ALVES.<b>AnalisesV10</b>
             </h1>
             <p>Estatísticas profissionais de futebol</p>
           </div>
@@ -561,9 +734,9 @@ export default function Home() {
                     <p>As setas abrem a lista de ligas e times</p>
                   </div>
                 </div>
-                <div className="form-grid">
+                <div className="cross-grid">
                   <Select
-                    label="Liga"
+                    label="Liga da casa"
                     value={leagueId}
                     set={setLeagueId}
                     placeholder="Selecionar liga..."
@@ -581,12 +754,22 @@ export default function Home() {
                     disabled={!league}
                   />
                   <Select
+                    label="Liga do visitante"
+                    value={awayLeagueId}
+                    set={setAwayLeagueId}
+                    placeholder="Selecionar liga visitante..."
+                    options={leagues.map((l) => [
+                      l.id,
+                      `${l.country} — ${l.name} (${l.season})`,
+                    ])}
+                  />
+                  <Select
                     label="Fora"
                     value={away}
                     set={setAway}
                     placeholder="Selecionar time visitante..."
-                    options={teams.map((t) => [t, t])}
-                    disabled={!league}
+                    options={awayTeams.map((t) => [t, t])}
+                    disabled={!awayLeague}
                   />
                 </div>
               </section>
@@ -598,7 +781,9 @@ export default function Home() {
                 <i className="red">●</i>
                 <div>
                   <h3>Dados ao vivo</h3>
-                  <p>Atualize o placar e as estatísticas atuais</p>
+                  <p>
+                    Preencha os números e clique em Analisar partida ao vivo
+                  </p>
                 </div>
               </div>
               <div className="live-grid">
@@ -612,6 +797,24 @@ export default function Home() {
                   sot: "No gol",
                   yellow: "Amarelos",
                   red: "Vermelhos",
+                  attacksHome: "Ataques casa",
+                  attacksAway: "Ataques fora",
+                  dangerHome: "Perigosos casa",
+                  dangerAway: "Perigosos fora",
+                  shotsHome: "Chutes casa",
+                  shotsAway: "Chutes fora",
+                  sotHome: "No gol casa",
+                  sotAway: "No gol fora",
+                  yellowHome: "Amarelos casa",
+                  yellowAway: "Amarelos fora",
+                  redHome: "Vermelhos casa",
+                  redAway: "Vermelhos fora",
+                  possessionHome: "Posse casa %",
+                  possessionAway: "Posse fora %",
+                  pressureHome: "Pressão casa",
+                  pressureAway: "Pressão fora",
+                  xgHome: "xG casa",
+                  xgAway: "xG fora",
                 }).map(([k, v]) => (
                   <label key={k}>
                     {v}
@@ -619,16 +822,63 @@ export default function Home() {
                       type="number"
                       min="0"
                       value={live[k as keyof typeof live]}
-                      onChange={(e) =>
-                        setLive({ ...live, [k]: n(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        setLive({ ...live, [k]: n(e.target.value) });
+                        setAnalyzed(false);
+                      }}
                     />
                   </label>
                 ))}
               </div>
+              <div className="analysis-actions">
+                <button
+                  className="primary"
+                  disabled={!ready}
+                  onClick={() => setAnalyzed(true)}
+                >
+                  Analisar partida ao vivo
+                </button>
+                <button
+                  onClick={() => {
+                    setAnalyzed(false);
+                    setLive({
+                      ...live,
+                      minute: 35,
+                      hg: 0,
+                      ag: 0,
+                      hc: 0,
+                      ac: 0,
+                      shots: 0,
+                      sot: 0,
+                      yellow: 0,
+                      red: 0,
+                      attacksHome: 0,
+                      attacksAway: 0,
+                      dangerHome: 0,
+                      dangerAway: 0,
+                      shotsHome: 0,
+                      shotsAway: 0,
+                      sotHome: 0,
+                      sotAway: 0,
+                      yellowHome: 0,
+                      yellowAway: 0,
+                      redHome: 0,
+                      redAway: 0,
+                      possessionHome: 50,
+                      possessionAway: 50,
+                      pressureHome: 0,
+                      pressureAway: 0,
+                      xgHome: 0,
+                      xgAway: 0,
+                    });
+                  }}
+                >
+                  Limpar dados
+                </button>
+              </div>
             </section>
           )}
-          {(tab === "pre" || tab === "live") &&
+          {(tab === "pre" || (tab === "live" && analyzed)) &&
             (!ready ? (
               <Empty has={leagues.length > 0} />
             ) : (
@@ -664,6 +914,46 @@ export default function Home() {
                     text={`5+ cartões • média ${avg([a!.cards, b!.cards]).toFixed(1)}`}
                   />
                 </div>
+                {tab === "live" && (
+                  <section className="live-diagnosis">
+                    <div>
+                      <span>DIAGNÓSTICO AO VIVO</span>
+                      <strong>
+                        {liveConfidence}% <small>confiança</small>
+                      </strong>
+                    </div>
+                    <h3>Pressão {pressureLeader}</h3>
+                    <p>
+                      O jogo apresenta{" "}
+                      {prob.goals >= 70
+                        ? "tendência favorável"
+                        : prob.goals >= 55
+                          ? "possibilidade moderada"
+                          : "tendência baixa"}{" "}
+                      para outro gol.{" "}
+                      {prob.corners >= 68
+                        ? "O volume ofensivo favorece novos escanteios."
+                        : "Os números de escanteios ainda pedem cautela."}{" "}
+                      {prob.cards >= 65
+                        ? "A intensidade e a disciplina indicam possibilidade de novos cartões."
+                        : "Não há força suficiente para um sinal de cartões."}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTab("ai");
+                        setTimeout(
+                          () =>
+                            askAI(
+                              "Explique o diagnóstico ao vivo atual, destacando gols, escanteios, cartões, riscos e confiança.",
+                            ),
+                          0,
+                        );
+                      }}
+                    >
+                      ✦ Consultar IA sobre o diagnóstico
+                    </button>
+                  </section>
+                )}
               </>
             ))}
           {tab === "ai" && (
@@ -767,27 +1057,103 @@ export default function Home() {
                 <div className="panel-head">
                   <i className="blue">⇧</i>
                   <div>
-                    <h3>Importar ou atualizar CSV</h3>
-                    <p>
-                      Somente uma sessão administrativa autenticada consegue
-                      salvar dados
-                    </p>
+                    <h3>Importar CSV com segurança</h3>
+                    <p>Uma nova liga nunca substitui outra automaticamente</p>
                   </div>
+                </div>
+                <div className="import-mode">
+                  <button
+                    className={importMode === "create" ? "selected" : ""}
+                    onClick={() => {
+                      setImportMode("create");
+                      setUpdateTarget("");
+                    }}
+                  >
+                    ＋ Cadastrar nova liga
+                  </button>
+                  <button
+                    className={importMode === "update" ? "selected" : ""}
+                    onClick={() => setImportMode("update")}
+                  >
+                    ↻ Atualizar liga existente
+                  </button>
+                </div>
+                {importMode === "update" && (
+                  <Select
+                    label="Escolha exatamente qual liga atualizar"
+                    value={updateTarget}
+                    set={(v) => {
+                      setUpdateTarget(v);
+                      const l = leagues.find((x) => x.id === v);
+                      if (l)
+                        setLeagueMeta({
+                          country: l.country,
+                          name: l.name,
+                          season: l.season,
+                          code: l.code,
+                        });
+                    }}
+                    placeholder="Selecionar liga existente..."
+                    options={leagues.map((l) => [
+                      l.id,
+                      `${l.country} — ${l.name} (${l.season})`,
+                    ])}
+                  />
+                )}
+                <div className="meta-grid">
+                  <label>
+                    País
+                    <input
+                      value={leagueMeta.country}
+                      onChange={(e) =>
+                        setLeagueMeta({
+                          ...leagueMeta,
+                          country: e.target.value,
+                        })
+                      }
+                      placeholder="Ex.: México"
+                    />
+                  </label>
+                  <label>
+                    Nome da liga
+                    <input
+                      value={leagueMeta.name}
+                      onChange={(e) =>
+                        setLeagueMeta({ ...leagueMeta, name: e.target.value })
+                      }
+                      placeholder="Ex.: Liga MX"
+                    />
+                  </label>
+                  <label>
+                    Temporada
+                    <input
+                      value={leagueMeta.season}
+                      onChange={(e) =>
+                        setLeagueMeta({ ...leagueMeta, season: e.target.value })
+                      }
+                      placeholder="Ex.: 2026/27"
+                    />
+                  </label>
+                  <label>
+                    Código
+                    <input
+                      value={leagueMeta.code}
+                      onChange={(e) =>
+                        setLeagueMeta({ ...leagueMeta, code: e.target.value })
+                      }
+                      placeholder="Ex.: MEX"
+                    />
+                  </label>
                 </div>
                 <div className="upload-grid">
                   <label className="drop">
                     <input type="file" accept=".csv,.txt" onChange={choose} />
                     <b>{fileName || "Selecionar arquivo CSV"}</b>
-                    <span>Football-Data ou estrutura compatível</span>
+                    <span>Aceita HomeTeam/AwayTeam ou Home/Away</span>
                   </label>
-                  <label>
-                    Temporada
-                    <input
-                      value={season}
-                      onChange={(e) => setSeason(e.target.value)}
-                      placeholder="Ex.: 2026/27"
-                    />
-                  </label>
+                  <div className="safe-note">
+                    🔒 O nome do arquivo não controla substituições.
+                  </div>
                 </div>
                 <textarea
                   value={csv}
@@ -796,12 +1162,21 @@ export default function Home() {
                 />
                 <div className="actions">
                   <button className="primary" disabled={!csv} onClick={save}>
-                    Processar e salvar
+                    {importMode === "create"
+                      ? "Cadastrar nova liga"
+                      : "Atualizar liga escolhida"}
                   </button>
                   <button
                     onClick={() => {
                       setCsv("");
                       setFileName("");
+                      setLeagueMeta({
+                        country: "",
+                        name: "",
+                        season: "",
+                        code: "",
+                      });
+                      setUpdateTarget("");
                     }}
                   >
                     Limpar
@@ -814,9 +1189,7 @@ export default function Home() {
                   <i className="green">▤</i>
                   <div>
                     <h3>Ligas no banco</h3>
-                    <p>
-                      Atualizar o mesmo código substitui somente aquela liga
-                    </p>
+                    <p>Edite os dados sem perder as partidas</p>
                   </div>
                 </div>
                 <div className="table">
@@ -839,6 +1212,24 @@ export default function Home() {
                         {new Date(l.updatedAt).toLocaleString("pt-BR")}
                       </span>
                       <span>
+                        <button onClick={() => setEditingLeague(l)}>
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setImportMode("update");
+                            setUpdateTarget(l.id);
+                            setLeagueMeta({
+                              country: l.country,
+                              name: l.name,
+                              season: l.season,
+                              code: l.code,
+                            });
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                        >
+                          Atualizar CSV
+                        </button>
                         <button className="danger" onClick={() => del(l.id)}>
                           Excluir
                         </button>
@@ -851,6 +1242,37 @@ export default function Home() {
           )}
         </main>
       </div>
+      {editingLeague && (
+        <div className="modal" onMouseDown={() => setEditingLeague(null)}>
+          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+            <i>✎</i>
+            <h2>Editar liga</h2>
+            <p>Os {editingLeague.games.length} jogos serão preservados.</p>
+            {(
+              [
+                ["country", "País"],
+                ["name", "Nome da liga"],
+                ["season", "Temporada"],
+                ["code", "Código"],
+              ] as const
+            ).map(([k, label]) => (
+              <label key={k}>
+                {label}
+                <input
+                  value={editingLeague[k]}
+                  onChange={(e) =>
+                    setEditingLeague({ ...editingLeague, [k]: e.target.value })
+                  }
+                />
+              </label>
+            ))}
+            <button className="primary" onClick={editLeague}>
+              Salvar alterações
+            </button>
+            <button onClick={() => setEditingLeague(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
       {login && (
         <div className="modal" onMouseDown={() => setLogin(false)}>
           <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
@@ -1047,15 +1469,29 @@ function UserAdmin() {
               <em className={`status-${u.status}`}>{label[u.status]}</em>
               <div className="user-actions">
                 {u.status !== "approved" && (
-                  <button className="approve" onClick={() => update(u.id, "approved")}>Aceitar</button>
+                  <button
+                    className="approve"
+                    onClick={() => update(u.id, "approved")}
+                  >
+                    Aceitar
+                  </button>
                 )}
                 {u.status !== "rejected" && (
-                  <button onClick={() => update(u.id, "rejected")}>Recusar</button>
+                  <button onClick={() => update(u.id, "rejected")}>
+                    Recusar
+                  </button>
                 )}
                 {u.status === "approved" && (
-                  <button className="danger" onClick={() => update(u.id, "blocked")}>Bloquear</button>
+                  <button
+                    className="danger"
+                    onClick={() => update(u.id, "blocked")}
+                  >
+                    Bloquear
+                  </button>
                 )}
-                <button className="danger" onClick={() => remove(u.id)}>Excluir</button>
+                <button className="danger" onClick={() => remove(u.id)}>
+                  Excluir
+                </button>
               </div>
             </div>
           ))

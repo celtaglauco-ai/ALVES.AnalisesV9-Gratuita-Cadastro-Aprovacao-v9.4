@@ -1,4 +1,4 @@
-# ALVES.AnalisesV9 Profissional
+# ALVES.AnalisesV10 Profissional
 
 Aplicação Next.js pronta para Render Free, com PostgreSQL gratuito permanente no Neon, autenticação administrativa no servidor e análise estatística gratuita por IA via OpenRouter.
 
@@ -16,3 +16,9 @@ Aplicação Next.js pronta para Render Free, com PostgreSQL gratuito permanente 
 Consulte `INSTRUCOES-RENDER.txt` para publicar.
 
 Esta edição não cria banco no Render: `DATABASE_URL` deve receber a conexão de um projeto Neon Free. O código da IA usa somente `openrouter/free` e nunca seleciona automaticamente um modelo pago.
+
+## Atualização da V9 para V10
+
+Substitua os arquivos do mesmo repositório. Mantenha `DATABASE_URL`, `SESSION_SECRET` e `OPENROUTER_API_KEY`. A V10 reutiliza as tabelas existentes e adiciona sua atualização automaticamente, preservando usuários, aprovações, ligas e partidas.
+
+Na importação, **Cadastrar nova liga** sempre cria um identificador exclusivo. **Atualizar liga existente** só substitui o CSV da liga escolhida explicitamente. País, nome, temporada e código podem ser editados sem apagar partidas.

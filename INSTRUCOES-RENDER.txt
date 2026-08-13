@@ -1,4 +1,12 @@
-ALVES.AnalisesV9 Profissional — versão totalmente gratuita
+ALVES.AnalisesV10 Profissional — atualização gratuita
+
+ATUALIZAR O SITE QUE JÁ ESTÁ NO AR
+
+1. No mesmo repositório GitHub, envie todos os arquivos desta V10 substituindo os anteriores.
+2. Não crie outro Render e não altere as variáveis existentes.
+3. O Render fará o deploy automaticamente; se necessário use Manual Deploy > Deploy latest commit.
+4. O endereço do site e os dados do Neon permanecem os mesmos.
+5. A primeira inicialização atualiza a estrutura do banco sem apagar usuários, ligas ou partidas.
 
 PARTE 1 — BANCO GRATUITO PERMANENTE NO NEON
 
