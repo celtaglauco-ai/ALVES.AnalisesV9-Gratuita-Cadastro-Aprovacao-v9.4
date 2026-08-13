@@ -26,11 +26,12 @@ export function initDb() {
   season TEXT NOT NULL, file_name TEXT NOT NULL DEFAULT '', games JSONB NOT NULL,
   updated_at BIGINT NOT NULL, data_quality JSONB NOT NULL DEFAULT '{"goals":true,"corners":true,"cards":true,"shots":true,"shotsOnTarget":true}'::jsonb
  ); CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
-  created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, last_seen BIGINT NOT NULL DEFAULT 0,
   CONSTRAINT users_status_check CHECK (status IN ('pending','approved','rejected','blocked'))
  ); ALTER TABLE leagues ADD COLUMN IF NOT EXISTS data_quality JSONB NOT NULL DEFAULT '{"goals":true,"corners":true,"cards":true,"shots":true,"shotsOnTarget":true}'::jsonb;
+ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen BIGINT NOT NULL DEFAULT 0;
  CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_ci ON users (lower(email));
  CREATE TABLE IF NOT EXISTS user_profiles (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

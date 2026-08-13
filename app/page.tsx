@@ -9,10 +9,13 @@ type UserRow = {
   email: string;
   status: "pending" | "approved" | "rejected" | "blocked";
   createdAt: number;
+  lastSeen?: number;
+  online?: boolean;
 };
 type TableMode = "TOTAL" | "HOME" | "AWAY";
 type StandingRow = { team:string; p:number; j:number; v:number; e:number; d:number; gp:number; gc:number; sg:number; form:("V"|"E"|"D")[] };
 type LiveApiGame={id:number;minute:number;status:string;league:string;country:string;home:string;away:string;hg:number;ag:number};
+type ApiLeagueOption={id:number;name:string;country:string;season:number;logo?:string};
 const codes: Record<string, [string, string]> = {
   E0: ["Inglaterra", "Premier League"],
   E1: ["Inglaterra", "Championship"],
@@ -181,12 +184,16 @@ export default function Home() {
     [importMode, setImportMode] = useState<"create" | "update">("create"),
     [updateTarget, setUpdateTarget] = useState(""),
     [editingLeague, setEditingLeague] = useState<League | null>(null),
+    [apiLeagueQuery,setApiLeagueQuery]=useState(""),
+    [apiLeagueOptions,setApiLeagueOptions]=useState<ApiLeagueOption[]>([]),
+    [apiLeagueLoading,setApiLeagueLoading]=useState(false),
     [analyzed, setAnalyzed] = useState(false),
     [tableMode, setTableMode] = useState<TableMode>("TOTAL"),
     [teamSearch, setTeamSearch] = useState(""),
     [selectedReferee, setSelectedReferee] = useState(""),
     [apiInfo, setApiInfo] = useState("Selecione uma liga para consultar a temporada atual na API"),
     [apiStandings, setApiStandings] = useState<Partial<Record<TableMode,StandingRow[]>>>({}),
+    [apiChecked, setApiChecked] = useState(false),
     [liveApiGames, setLiveApiGames] = useState<LiveApiGame[]>([]),
     [liveApiInfo, setLiveApiInfo] = useState("Clique para consultar os jogos ao vivo"),
     [liveApiLoading, setLiveApiLoading] = useState(false),
@@ -245,6 +252,7 @@ export default function Home() {
       })
       .finally(() => setAuthReady(true));
   }, []);
+  useEffect(()=>{if(!authenticated||admin)return;const ping=()=>fetch("/api/auth/presence",{method:"POST"}).catch(()=>{});ping();const timer=setInterval(ping,45000);return()=>clearInterval(timer)},[authenticated,admin]);
   const league = leagues.find((x) => x.id === leagueId),
     awayLeague = leagues.find((x) => x.id === awayLeagueId),
     teams = useMemo(
@@ -384,9 +392,9 @@ export default function Home() {
     visibleStandings=standings.filter(x=>x.team.toLowerCase().includes(teamSearch.toLowerCase())),
     homeVenueTable=league?buildTable(league.games,"HOME"):[], awayVenueTable=awayLeague?buildTable(awayLeague.games,"AWAY"):[],
     homeStanding=homeVenueTable.find(x=>x.team===home), awayStanding=awayVenueTable.find(x=>x.team===away),
-    referees=useMemo(()=>league?[...new Set(league.games.map(g=>g.referee).filter((x):x is string=>!!x))].sort():[],[league]),
+    referees=useMemo(()=>[...new Set(leagues.flatMap(l=>l.games.map(g=>g.referee)).filter((x):x is string=>!!x))].sort(),[leagues]),
     refName=selectedReferee||referees[0]||"Média geral da arbitragem da liga",
-    refereeGames=league?.games.filter(g=>referees.length?g.referee===refName:true)||[],
+    refereeGames=referees.length?leagues.flatMap(l=>l.games).filter(g=>g.referee===refName):(league?.games||[]),
     leagueCards=league?avg(league.games.map(g=>g.hy+g.ay+g.hr+g.ar)):0,
     refereeStats=refereeGames.length?{
       games:refereeGames.length,
@@ -403,17 +411,28 @@ export default function Home() {
       over55:pct(refereeGames,g=>g.hy+g.ay+g.hr+g.ar>=6),
       recent:refereeGames.slice(-5).map(g=>g.hy+g.ay+g.hr+g.ar),
     }:null,
+    homeDiscipline=league&&home?league.games.filter(g=>g.home===home).slice(-12):[],
+    awayDiscipline=awayLeague&&away?awayLeague.games.filter(g=>g.away===away).slice(-12):[],
+    expectedHomeCards=avg(homeDiscipline.map(g=>g.hy+g.hr)),
+    expectedAwayCards=avg(awayDiscipline.map(g=>g.ay+g.ar)),
+    teamExpectedCards=expectedHomeCards+expectedAwayCards,
+    projectedCards=refereeStats?teamExpectedCards*.55+refereeStats.cards*.45:teamExpectedCards,
+    disciplineConfidence=Math.min(92,Math.round(40+Math.min(24,homeDiscipline.length+awayDiscipline.length)+(referees.length&&refereeStats?18:0))),
+    projectedOver35=refereeStats?refereeStats.over35*.55+pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=4)*.45:pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=4),
+    projectedOver45=refereeStats?refereeStats.over45*.55+pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=5)*.45:pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=5),
+    projectedOver55=refereeStats?refereeStats.over55*.55+pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=6)*.45:pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=6),
+    redRisk=refereeStats?Math.min(80,refereeStats.red*100):pct([...homeDiscipline,...awayDiscipline],g=>g.hr+g.ar>0),
     h2h=league&&league.id===awayLeague?.id?league.games.filter(g=>(g.home===home&&g.away===away)||(g.home===away&&g.away===home)).slice(-5):[];
   const checkFreeApi=async()=>{
     if(!league)return;
     setApiInfo("Consultando API gratuita...");
     const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(league.id)}`,{cache:"no-store"}),d=await r.json();
-    if(d.available){setApiStandings(d.tables||{});setApiInfo(`${d.league?.name||league.name} • temporada ${d.league?.season} • atualizado pela ${d.source} às ${new Date(d.updatedAt).toLocaleTimeString("pt-BR")}`)}else{setApiStandings({});setApiInfo(d.reason||"Classificação atual indisponível na API")}
+    if(d.available){setApiStandings(d.tables||{});setApiInfo(`${d.league?.name||league.name} • temporada ${d.league?.season} • atualizado pela ${d.source} às ${new Date(d.updatedAt).toLocaleTimeString("pt-BR")}`)}else{setApiStandings({});setApiInfo("")}setApiChecked(true)
   };
   const fetchLiveGames=async()=>{setLiveApiLoading(true);setLiveApiInfo("Consultando jogos ao vivo...");try{const r=await fetch("/api/live",{cache:"no-store"}),d=await r.json();if(d.available){setLiveApiGames(d.games||[]);setLiveApiInfo(`${d.games?.length||0} jogos ao vivo • cota restante: ${d.remaining||"—"}`)}else setLiveApiInfo(d.reason||"API indisponível")}finally{setLiveApiLoading(false)}};
   const loadLiveStats=async(g:LiveApiGame)=>{setLiveApiLoading(true);try{const r=await fetch(`/api/live?id=${g.id}`,{cache:"no-store"}),d=await r.json(),teams=d.statistics||[];const values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value]));const h=values(0),a=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%",""));setLive(x=>({...x,minute:g.minute||x.minute,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(a,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(a,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(a,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(a,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(a,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(a,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(a,"Goalkeeper Saves")}));setAnalyzed(false);setLiveApiInfo(`${g.home} × ${g.away}: dados carregados. Você ainda pode editar manualmente.`)}finally{setLiveApiLoading(false)}};
   const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});setNotice("Análise salva somente no seu histórico privado.")};
-  useEffect(()=>{setApiStandings({});setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi()},[leagueId]);
+  useEffect(()=>{setApiStandings({});setApiChecked(false);setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi()},[leagueId]);
   const doLogin = async () => {
     const r = await fetch("/api/auth/login", {
         method: "POST",
@@ -539,6 +558,7 @@ export default function Home() {
     setNotice("Liga editada sem perder os jogos.");
     await load();
   };
+  const searchApiLeagues=async()=>{if(apiLeagueQuery.trim().length<2)return;setApiLeagueLoading(true);const r=await fetch(`/api/admin/api-leagues?q=${encodeURIComponent(apiLeagueQuery.trim())}`,{cache:"no-store"}),d=await r.json();setApiLeagueOptions(r.ok?d.leagues||[]:[]);if(!r.ok)setNotice(d.error||"Não foi possível buscar ligas na API.");setApiLeagueLoading(false)};
   const del = async (id: string) => {
     if (!confirm("Excluir esta liga do banco?")) return;
     const r = await fetch(`/api/admin/leagues?id=${encodeURIComponent(id)}`, {
@@ -851,7 +871,7 @@ export default function Home() {
               </section>
             </>
           )}
-          {(tab === "pre" || tab === "live") && league && (
+          {(tab === "pre" || tab === "live") && league && (!apiChecked || standings.length>0) && (
             <section className="panel standings-panel">
               <div className="standings-head">
                 <div><h3>🏆 Classificação</h3><p>{apiInfo}</p></div>
@@ -1023,6 +1043,7 @@ export default function Home() {
                   <div className="panel-head"><i className="orange">▰</i><div><h3>Análise completa da arbitragem</h3><p>Histórico disciplinar, faltas, linhas de cartões e perfil de rigor</p></div></div>
                   {referees.length?<Select label="Selecionar árbitro" value={refName} set={setSelectedReferee} placeholder="Selecionar árbitro" options={referees.map(x=>[x,x])}/>:<div className="ref-average-note"><b>Média geral da arbitragem da liga</b><span>O CSV não identifica os árbitros; os números abaixo consideram todos os jogos importados.</span></div>}
                   {refereeStats&&<><div className="ref-profile"><div><small>PERFIL</small><strong>{refereeStats.cards>=leagueCards*1.15?"Rigoroso":refereeStats.cards<=leagueCards*.85?"Pouco rigoroso":"Moderado"}</strong></div><div><small>COMPARAÇÃO COM A LIGA</small><strong className={refereeStats.cards>=leagueCards?"positive":""}>{refereeStats.cards>=leagueCards?"+":""}{(refereeStats.cards-leagueCards).toFixed(2)} cartão/jogo</strong></div><div><small>ÚLTIMOS 5 JOGOS</small><span className="recent-cards">{refereeStats.recent.map((x,i)=><i key={i}>{x}</i>)}</span></div></div><div className="ref-stats"><article><small>Jogos apitados</small><b>{refereeStats.games}</b></article><article><small>Faltas/jogo</small><b>{refereeStats.fouls?refereeStats.fouls.toFixed(1):"—"}</b></article><article><small>Amarelos/jogo</small><b>{refereeStats.yellow.toFixed(2)}</b></article><article><small>Vermelhos/jogo</small><b>{refereeStats.red.toFixed(2)}</b></article><article><small>Cartões/jogo</small><b>{refereeStats.cards.toFixed(2)}</b></article><article><small>Cartões mandante</small><b>{refereeStats.homeCards.toFixed(2)}</b></article><article><small>Cartões visitante</small><b>{refereeStats.awayCards.toFixed(2)}</b></article><article><small>Amarelos casa/fora</small><b>{refereeStats.homeYellow.toFixed(1)} / {refereeStats.awayYellow.toFixed(1)}</b></article><article><small>Over 3,5 cartões</small><b>{refereeStats.over35.toFixed(0)}%</b></article><article><small>Over 4,5 cartões</small><b>{refereeStats.over45.toFixed(0)}%</b></article><article><small>Over 5,5 cartões</small><b>{refereeStats.over55.toFixed(0)}%</b></article></div></>}
+                  <div className="match-discipline"><header><div><small>PROJEÇÃO DISCIPLINAR DA PARTIDA</small><h3>O que pode acontecer em {home} × {away}</h3></div><strong>{disciplineConfidence}% <small>confiança</small></strong></header><div className="discipline-grid"><article><small>Faixa provável</small><b>{Math.max(0,Math.floor(projectedCards-1))} a {Math.ceil(projectedCards+1)} cartões</b></article><article><small>{home}</small><b>{expectedHomeCards.toFixed(1)} cartões</b></article><article><small>{away}</small><b>{expectedAwayCards.toFixed(1)} cartões</b></article><article><small>Risco de vermelho</small><b>{redRisk.toFixed(0)}%</b></article><article><small>Over 3,5</small><b>{projectedOver35.toFixed(0)}%</b></article><article><small>Over 4,5</small><b>{projectedOver45.toFixed(0)}%</b></article><article><small>Over 5,5</small><b>{projectedOver55.toFixed(0)}%</b></article><article><small>Mais exposto</small><b>{expectedHomeCards>expectedAwayCards*1.1?home:expectedAwayCards>expectedHomeCards*1.1?away:"Equilibrado"}</b></article></div><p>Projeção baseada no comportamento recente dos times {referees.length?`e no histórico de ${refName}`:"e na média disciplinar da liga"}. É uma tendência estatística, não uma garantia.</p></div>
                 </section>
                 <div className="markets">
                   <Market
@@ -1265,13 +1286,13 @@ export default function Home() {
                     />
                   </label>
                   <label>
-                    Código
+                    Código / ID da API-Football
                     <input
                       value={leagueMeta.code}
                       onChange={(e) =>
                         setLeagueMeta({ ...leagueMeta, code: e.target.value })
                       }
-                      placeholder="Ex.: MEX"
+                      placeholder="Ex.: D1 ou ID numérico"
                     />
                   </label>
                 </div>
@@ -1383,7 +1404,7 @@ export default function Home() {
                 ["country", "País"],
                 ["name", "Nome da liga"],
                 ["season", "Temporada"],
-                ["code", "Código"],
+                ["code", "Código / ID da API-Football"],
               ] as const
             ).map(([k, label]) => (
               <label key={k}>
@@ -1396,6 +1417,13 @@ export default function Home() {
                 />
               </label>
             ))}
+            <div className="api-league-linker">
+              <b>Associar à classificação da API</b>
+              <small>Pesquise a competição e escolha o resultado correto.</small>
+              <div><input value={apiLeagueQuery} onChange={e=>setApiLeagueQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&searchApiLeagues()} placeholder="Ex.: Bundesliga, Serie C..."/><button disabled={apiLeagueLoading||apiLeagueQuery.trim().length<2} onClick={searchApiLeagues}>{apiLeagueLoading?"Buscando...":"Buscar"}</button></div>
+              {apiLeagueOptions.length>0&&<div className="api-league-results">{apiLeagueOptions.map(x=><button key={x.id} onClick={()=>{setEditingLeague({...editingLeague,code:String(x.id)});setApiLeagueOptions([]);setApiLeagueQuery(`${x.name} — ${x.country}`)}}><span>{x.name}<small>{x.country} • temporada {x.season}</small></span><strong>ID {x.id}</strong></button>)}</div>}
+              <em>ID associado atualmente: {editingLeague.code||"nenhum"}</em>
+            </div>
             <button className="primary" onClick={editLeague}>
               Salvar alterações
             </button>
@@ -1554,6 +1582,7 @@ function UserAdmin() {
   };
   useEffect(() => {
     loadUsers();
+    const timer=setInterval(loadUsers,30000);return()=>clearInterval(timer);
   }, []);
   const update = async (id: string, status: UserRow["status"]) => {
     const r = await fetch("/api/admin/users", {
@@ -1596,8 +1625,9 @@ function UserAdmin() {
             <div className="user-row" key={u.id}>
               <i>{u.name.charAt(0).toUpperCase()}</i>
               <p>
-                <b>{u.name}</b>
+                <b><span className={`presence-dot ${u.online?"online":"offline"}`}/>{u.name}</b>
                 <small>{u.email}</small>
+                <small>{u.online?"Online agora":u.lastSeen?`Offline • visto ${new Date(u.lastSeen).toLocaleString("pt-BR")}`:"Offline"}</small>
               </p>
               <em className={`status-${u.status}`}>{label[u.status]}</em>
               <div className="user-actions">
