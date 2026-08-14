@@ -1,7 +1,7 @@
 "use client";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import type { DataQuality, Game, League } from "@/lib/types";
-type Tab = "pre" | "live" | "ai" | "admin";
+type Tab = "pre" | "standings" | "live" | "ai" | "admin";
 type Msg = { role: "user" | "assistant"; content: string };
 type UserRow = {
   id: string;
@@ -194,6 +194,7 @@ export default function Home() {
     [analyzed, setAnalyzed] = useState(false),
     [tableMode, setTableMode] = useState<TableMode>("TOTAL"),
     [teamSearch, setTeamSearch] = useState(""),
+    [leagueSearch,setLeagueSearch]=useState(""),
     [selectedReferee, setSelectedReferee] = useState(""),
     [apiInfo, setApiInfo] = useState("Selecione uma liga para consultar a temporada atual na API"),
     [apiStandings, setApiStandings] = useState<Partial<Record<TableMode,StandingRow[]>>>({}),
@@ -446,12 +447,14 @@ export default function Home() {
     const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(league.id)}`,{cache:"no-store"}),d=await r.json();
     if(d.available){setApiStandings(d.tables||{});setApiInfo(`${d.league?.name||league.name} • temporada ${d.league?.season} • atualizado pela ${d.source} às ${new Date(d.updatedAt).toLocaleTimeString("pt-BR")}`)}else{setApiStandings({});setApiInfo("")}setApiChecked(true)
   };
-  const fetchLiveGames=async()=>{setLiveApiLoading(true);setLiveApiInfo("Consultando jogos de hoje e partidas ao vivo...");try{const r=await fetch(`/api/live?refresh=${Date.now()}`,{cache:"no-store"}),d=await r.json();if(d.available){setLiveApiGames(d.games||[]);setLiveApiInfo(d.games?.length?`${d.games.length} partidas encontradas em ${d.source||"consulta atual"} • cota restante: ${d.remaining||"—"}`:(d.reason||"Nenhum jogo foi encontrado nas ligas cadastradas."))}else setLiveApiInfo(`API: ${d.reason||"indisponível"}${d.remaining?` • cota restante: ${d.remaining}`:""}`)}catch{setLiveApiInfo("Falha ao consultar a API. Atualize a página e tente novamente.")}finally{setLiveApiLoading(false)}};
+  const clearLiveAnalysis=()=>{setSelectedLiveId(null);setLiveAiAnalysis("");setAnalyzed(false);setLive({minute:0,hg:0,ag:0,hc:0,ac:0,shots:0,sot:0,yellow:0,red:0,attacksHome:0,attacksAway:0,dangerHome:0,dangerAway:0,shotsHome:0,shotsAway:0,sotHome:0,sotAway:0,yellowHome:0,yellowAway:0,redHome:0,redAway:0,possessionHome:0,possessionAway:0,pressureHome:0,pressureAway:0,xgHome:0,xgAway:0,savesHome:0,savesAway:0})};
+  const fetchLiveGames=async()=>{clearLiveAnalysis();setLiveApiLoading(true);setLiveApiInfo("Consultando jogos de hoje e partidas ao vivo...");try{const r=await fetch(`/api/live?refresh=${Date.now()}`,{cache:"no-store"}),d=await r.json();if(d.available){setLiveApiGames(d.games||[]);setLiveApiInfo(d.games?.length?`${d.games.length} partidas encontradas em ${d.source||"consulta atual"} • cota restante: ${d.remaining||"—"}`:(d.reason||"Nenhum jogo foi encontrado nas ligas cadastradas."))}else setLiveApiInfo(`API: ${d.reason||"indisponível"}${d.remaining?` • cota restante: ${d.remaining}`:""}`)}catch{setLiveApiInfo("Falha ao consultar a API. Atualize a página e tente novamente.")}finally{setLiveApiLoading(false)}};
   const loadLiveStats=async(g:LiveApiGame)=>{setLiveApiLoading(true);try{const r=await fetch(`/api/live?id=${g.id}`,{cache:"no-store"}),d=await r.json(),teams=d.statistics||[];const values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value]));const h=values(0),a=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%",""));setLive(x=>({...x,minute:g.minute||x.minute,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(a,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(a,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(a,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(a,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(a,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(a,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(a,"Goalkeeper Saves")}));setAnalyzed(false);setLiveApiInfo(`${g.home} × ${g.away}: dados carregados. Você ainda pode editar manualmente.`)}finally{setLiveApiLoading(false)}};
   const analyzeLiveGame=async(g:LiveApiGame)=>{const src=leagues.find(l=>l.id===g.registeredLeagueId),norm=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,""),findTeam=(name:string)=>src?[...new Set(src.games.flatMap(x=>[x.home,x.away]))].find(t=>norm(t).includes(norm(name))||norm(name).includes(norm(t))):undefined,homeName=findTeam(g.home),awayName=findTeam(g.away),recent=(team?:string)=>team&&src?src.games.filter(x=>x.home===team||x.away===team).slice(-5):[],hr=recent(homeName),ar=recent(awayName),teamGoals=(games:Game[],team?:string)=>avg(games.map(x=>x.home===team?x.hg:x.ag)),teamConceded=(games:Game[],team?:string)=>avg(games.map(x=>x.home===team?x.ag:x.hg)),historyText=hr.length||ar.length?`Histórico CSV: ${homeName||g.home} marcou média ${teamGoals(hr,homeName).toFixed(2)} e sofreu ${teamConceded(hr,homeName).toFixed(2)} nos últimos ${hr.length} jogos; ${awayName||g.away} marcou ${teamGoals(ar,awayName).toFixed(2)} e sofreu ${teamConceded(ar,awayName).toFixed(2)} nos últimos ${ar.length}.`:`Não existe histórico CSV compatível para este confronto.`,localAnalysis=`ANÁLISE ESTATÍSTICA DISPONÍVEL\n${g.home} ${g.hg} × ${g.ag} ${g.away}\nSituação informada: ${g.statusLong}${g.minute?` aos ${g.minute} minutos`:""}.\n${historyText}\nLeitura: ${g.hg===g.ag?"o placar está equilibrado":g.hg>g.ag?`${g.home} aparece em vantagem`:`${g.away} aparece em vantagem`}. Sem chutes, escanteios ou cartões confirmados, não é seguro indicar pressão nem projetar esses mercados.`;setSelectedLiveId(g.id);setLiveAiAnalysis(localAnalysis);setLiveApiLoading(true);try{const statsResponse=await fetch(`/api/live?id=${g.id}&provider=${g.provider}`,{cache:"no-store"}),statsData=await statsResponse.json(),teams=statsData.statistics||[],values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value])),h=values(0),aStats=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%","")),snapshot={minute:g.minute||0,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(aStats,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(aStats,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(aStats,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(aStats,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(aStats,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(aStats,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(aStats,"Goalkeeper Saves")};setLive(x=>({...x,...snapshot,shots:snapshot.shotsHome+snapshot.shotsAway,sot:snapshot.sotHome+snapshot.sotAway,yellow:snapshot.yellowHome+snapshot.yellowAway,red:snapshot.redHome+snapshot.redAway}));if(g.registeredLeagueId){setLeagueId(g.registeredLeagueId);setAwayLeagueId(g.registeredLeagueId)}setHome(homeName||g.home);setAway(awayName||g.away);setLiveApiInfo(`${g.home} × ${g.away}: ${statsData.limited?"placar e histórico carregados; detalhes ao vivo não existem no plano gratuito.":"estatísticas carregadas."}`);const aiResponse=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"Faça uma análise objetiva usando somente os dados fornecidos e o histórico. Não invente estatísticas ausentes. Mostre cenário, tendência de gols e limitações.",history:[],context:{mode:"live",provider:g.provider,league:g.league,country:g.country,home:g.home,away:g.away,status:g.statusLong,history:{home:hr,away:ar},dataLimitation:statsData.limited?statsData.reason:null,live:snapshot}})}),aiData=await aiResponse.json();if(aiResponse.ok&&aiData.answer)setLiveAiAnalysis(`${localAnalysis}\n\nANÁLISE COMPLEMENTAR DA IA\n${aiData.answer}`);else setLiveAiAnalysis(`${localAnalysis}\n\nA IA externa está indisponível agora; a análise estatística local acima continua válida.`)}catch{setLiveAiAnalysis(`${localAnalysis}\n\nNão foi possível consultar a IA externa; a análise estatística local acima continua disponível.`)}finally{setLiveApiLoading(false)}};
   useEffect(()=>{if(tab==="live"&&authenticated&&leagues.length&&!liveAutoLoaded){setLiveAutoLoaded(true);fetchLiveGames()}},[tab,authenticated,leagues.length,liveAutoLoaded]);
   const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});setNotice("Análise salva somente no seu histórico privado.")};
   useEffect(()=>{setApiStandings({});setApiChecked(false);setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi()},[leagueId]);
+  useEffect(()=>{if(!authenticated||!leagueId)return;const timer=setInterval(checkFreeApi,15*60*1000);return()=>clearInterval(timer)},[authenticated,leagueId]);
   const doLogin = async () => {
     const r = await fetch("/api/auth/login", {
         method: "POST",
@@ -784,6 +787,12 @@ export default function Home() {
             click={() => publicTab("pre")}
           />
           <Nav
+            on={tab === "standings"}
+            icon="🏆"
+            title="Classificações"
+            click={() => publicTab("standings")}
+          />
+          <Nav
             on={tab === "live"}
             icon="●"
             title="Ao vivo"
@@ -828,23 +837,29 @@ export default function Home() {
                   <span>
                     {tab === "pre"
                       ? "ANÁLISE PRÉ-JOGO"
+                      : tab === "standings"
+                        ? "CAMPEONATOS E TEMPORADAS"
                       : tab === "live"
                         ? "ANÁLISE AO VIVO"
                         : "INTELIGÊNCIA ESTATÍSTICA"}
                   </span>
                   <h2>
-                    {tab === "ai"
+                    {tab === "standings"
+                      ? "Classificações"
+                      : tab === "ai"
                       ? "Análise de jogos por IA"
                       : "Central de análises"}
                   </h2>
                   <p>
-                    {tab === "ai"
+                    {tab === "standings"
+                      ? "Selecione uma competição para acompanhar sua tabela oficial atualizada."
+                      : tab === "ai"
                       ? "Faça perguntas somente sobre os números da partida."
                       : tab==="live"?"Escolha um jogo do dia para receber a análise automática.":"Selecione a competição e as equipes para calcular tendências."}
                   </p>
                 </div>
               </div>
-              {tab!=="live"&&<section className="panel">
+              {(tab==="pre"||tab==="ai")&&<section className="panel">
                 <div className="panel-head">
                   <i className="green">⌄</i>
                   <div>
@@ -893,6 +908,20 @@ export default function Home() {
               </section>}
             </>
           )}
+          {tab === "standings" && (
+            <>
+              <section className="panel league-library">
+                <div className="standings-library-head"><div><h3>🏆 Competições cadastradas</h3><p>Uma nova liga cadastrada no painel aparecerá automaticamente aqui.</p></div><input value={leagueSearch} onChange={e=>setLeagueSearch(e.target.value)} placeholder="Buscar liga ou país..."/></div>
+                <div className="league-cards">{leagues.filter(l=>`${l.name} ${l.country} ${l.season}`.toLowerCase().includes(leagueSearch.toLowerCase())).map(l=><button key={l.id} className={leagueId===l.id?"selected":""} onClick={()=>{setLeagueId(l.id);setTableMode("TOTAL");setTeamSearch("")}}><i>🏆</i><span><b>{l.name}</b><small>{l.country} • temporada {l.season}</small></span><em className={leagueId===l.id&&standings.length?"api-ok":apiChecked&&leagueId===l.id?"api-off":"api-wait"}>{leagueId===l.id&&standings.length?"● Atualizada pela API":apiChecked&&leagueId===l.id?"● Sem cobertura":"● Consultar"}</em></button>)}</div>
+                {!leagues.length&&<p className="nodata">Nenhuma competição cadastrada.</p>}
+              </section>
+              {league&&<section className="panel standings-panel standings-full-page">
+                <div className="standings-head"><div><h3>🏆 {league.name}</h3><p>{league.country} • temporada cadastrada {league.season}<br/>{apiInfo}</p></div><div className="standings-tools"><input value={teamSearch} onChange={e=>setTeamSearch(e.target.value)} placeholder="Buscar time..."/><button disabled={!league||apiChecked===false&&apiInfo.includes("Consultando")} onClick={checkFreeApi}>↻ Atualizar classificação</button></div></div>
+                <div className="standing-tabs">{(["TOTAL","HOME","AWAY"] as TableMode[]).map(m=><button key={m} className={tableMode===m?"selected":""} onClick={()=>setTableMode(m)}>{m==="TOTAL"?"GERAL":m==="HOME"?"MANDANTE":"VISITANTE"}</button>)}</div>
+                <div className="standing-table"><div className="standing-row standing-th"><span>#</span><span>CLUBE</span><span>PTS</span><span>PJ</span><span>VIT</span><span>E</span><span>DER</span><span>GM</span><span>GC</span><span>SG</span><span>ÚLTIMAS 5</span></div>{visibleStandings.map(r=><div className="standing-row" key={r.team}><span className="position">{standings.findIndex(x=>x.team===r.team)+1}</span><b>{r.team}</b><strong>{r.p}</strong><span>{r.j}</span><span>{r.v}</span><span>{r.e}</span><span>{r.d}</span><span>{r.gp}</span><span>{r.gc}</span><span className={r.sg>=0?"positive":"negative"}>{r.sg>0?"+":""}{r.sg}</span><Form values={r.form}/></div>)}{!visibleStandings.length&&<div className="api-standing-empty">{apiChecked?(apiInfo||"Esta competição não possui classificação disponível na API para a temporada cadastrada."):"Selecione uma competição para consultar a classificação."}</div>}</div>
+              </section>}
+            </>
+          )}
           {tab === "pre" && league && (!apiChecked || standings.length>0) && (
             <section className="panel standings-panel">
               <div className="standings-head">
@@ -921,7 +950,7 @@ export default function Home() {
               <div className="live-filters"><label>Competição<select value={liveCompetition} onChange={e=>setLiveCompetition(e.target.value)}><option value="ALL">Todas as competições</option>{liveCompetitions.map(x=><option key={x} value={x}>{x}</option>)}</select></label><label>Status<select value={liveStatusFilter} onChange={e=>setLiveStatusFilter(e.target.value)}><option value="ALL">Todos</option><option value="LIVE">Ao vivo</option><option value="SCHEDULED">Agendados</option><option value="FINISHED">Encerrados</option></select></label><label>Buscar time<input value={liveTeamFilter} onChange={e=>setLiveTeamFilter(e.target.value)} placeholder="Nome do time..."/></label><label className="history-toggle"><input type="checkbox" checked={liveHistoryOnly} onChange={e=>setLiveHistoryOnly(e.target.checked)}/> Somente com histórico CSV</label></div>
               {liveApiLoading&&!liveApiGames.length&&<p className="nodata">Carregando jogos e escudos...</p>}
               {visibleLiveGames.length?<div className="live-match-icons">{visibleLiveGames.map(g=><button key={g.id} className={selectedLiveId===g.id?"selected":""} disabled={liveApiLoading} onClick={()=>analyzeLiveGame(g)} title={`Analisar ${g.home} x ${g.away}`}><small>{g.league}</small><div><span>{g.homeLogo?<img src={g.homeLogo} alt={g.home}/>:"⚽"}<em>{g.home}</em></span><strong>{g.hg} × {g.ag}</strong><span>{g.awayLogo?<img src={g.awayLogo} alt={g.away}/>:"⚽"}<em>{g.away}</em></span></div><b>{["1H","2H","HT","ET","BT","P","LIVE"].includes(g.status)?`${g.minute||0}' • AO VIVO`:g.status==="NS"?new Date(g.date).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):g.statusLong}</b></button>)}</div>:!liveApiLoading&&<p className="nodata">Nenhum jogo corresponde aos filtros selecionados.</p>}
-              {(selectedLiveGame||liveAiAnalysis)&&<div className="instant-live-ai"><header><span>✦ CENTRAL DO JOGO • {selectedLiveGame?.home} × {selectedLiveGame?.away}</span>{liveApiLoading&&<small>Atualizando a análise...</small>}</header>{liveAiAnalysis&&<p>{liveAiAnalysis}</p>}</div>}
+              {(selectedLiveGame||liveAiAnalysis)&&<div className="instant-live-ai"><header><span>✦ CENTRAL DO JOGO • {selectedLiveGame?.home} × {selectedLiveGame?.away}</span><div>{liveApiLoading&&<small>Atualizando a análise...</small>}<button className="clear-live-analysis" onClick={clearLiveAnalysis}>× Limpar análise</button></div></header>{liveAiAnalysis&&<p>{liveAiAnalysis}</p>}</div>}
             </section>
             <details className="panel live-manual-details">
               <summary>+ Complementar estatísticas</summary>
