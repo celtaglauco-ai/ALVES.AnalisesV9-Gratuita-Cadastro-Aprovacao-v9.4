@@ -36,6 +36,7 @@ const codes: Record<string, [string, string]> = {
   ARG: ["Argentina", "Liga Profesional"],
   USA: ["Estados Unidos", "MLS"],
 };
+const freeStandingLeague=(l:League)=>{const cleanText=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,""),country=cleanText(l.country),name=cleanText(l.name),season=cleanText(l.season),currentSeason=season==="atual"||season==="current"||season.startsWith("2026");if(!currentSeason)return false;return (country==="brasil"&&(name==="brasileiraoseriea"||name==="brasileirao"||name==="campeonatobrasileiroseriea"||name==="seriea"))||(country==="inglaterra"&&(name==="premierleague"||name==="championship"))||(country==="espanha"&&(name==="laliga"||name==="primeradivision"))||(country==="alemanha"&&name==="bundesliga")||(country==="italia"&&name==="seriea")||(country==="franca"&&name==="ligue1")||(country==="holanda"&&name==="eredivisie")||(country==="portugal"&&name==="primeiraliga")};
 const n = (v: unknown) => Number(String(v ?? "").replace(",", ".")) || 0,
   avg = (a: number[]) =>
     a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0,
@@ -911,9 +912,9 @@ export default function Home() {
           {tab === "standings" && (
             <>
               <section className="panel league-library">
-                <div className="standings-library-head"><div><h3>🏆 Competições cadastradas</h3><p>Uma nova liga cadastrada no painel aparecerá automaticamente aqui.</p></div><input value={leagueSearch} onChange={e=>setLeagueSearch(e.target.value)} placeholder="Buscar liga ou país..."/></div>
-                <div className="league-cards">{leagues.filter(l=>`${l.name} ${l.country} ${l.season}`.toLowerCase().includes(leagueSearch.toLowerCase())).map(l=><button key={l.id} className={leagueId===l.id?"selected":""} onClick={()=>{setLeagueId(l.id);setTableMode("TOTAL");setTeamSearch("")}}><i>🏆</i><span><b>{l.name}</b><small>{l.country} • temporada {l.season}</small></span><em className={leagueId===l.id&&standings.length?"api-ok":apiChecked&&leagueId===l.id?"api-off":"api-wait"}>{leagueId===l.id&&standings.length?"● Atualizada pela API":apiChecked&&leagueId===l.id?"● Sem cobertura":"● Consultar"}</em></button>)}</div>
-                {!leagues.length&&<p className="nodata">Nenhuma competição cadastrada.</p>}
+                <div className="standings-library-head"><div><h3>🏆 Competições com classificação gratuita</h3><p>Somente ligas da temporada atual com cobertura confirmada são exibidas aqui.</p></div><input value={leagueSearch} onChange={e=>setLeagueSearch(e.target.value)} placeholder="Buscar liga ou país..."/></div>
+                <div className="league-cards">{leagues.filter(freeStandingLeague).filter(l=>`${l.name} ${l.country} ${l.season}`.toLowerCase().includes(leagueSearch.toLowerCase())).map(l=><button key={l.id} className={leagueId===l.id?"selected":""} onClick={()=>{setLeagueId(l.id);setTableMode("TOTAL");setTeamSearch("")}}><i>🏆</i><span><b>{l.name}</b><small>{l.country} • temporada {l.season}</small></span><em className={leagueId===l.id&&standings.length?"api-ok":apiChecked&&leagueId===l.id?"api-off":"api-wait"}>{leagueId===l.id&&standings.length?"● Atualizada pela API":apiChecked&&leagueId===l.id?"● Indisponível agora":"● Consultar"}</em></button>)}</div>
+                {!leagues.some(freeStandingLeague)&&<p className="nodata">Cadastre uma liga compatível da temporada Atual, 2026 ou 2026/27.</p>}
               </section>
               {league&&<section className="panel standings-panel standings-full-page">
                 <div className="standings-head"><div><h3>🏆 {league.name}</h3><p>{league.country} • temporada cadastrada {league.season}<br/>{apiInfo}</p></div><div className="standings-tools"><input value={teamSearch} onChange={e=>setTeamSearch(e.target.value)} placeholder="Buscar time..."/><button disabled={!league||apiChecked===false&&apiInfo.includes("Consultando")} onClick={checkFreeApi}>↻ Atualizar classificação</button></div></div>
