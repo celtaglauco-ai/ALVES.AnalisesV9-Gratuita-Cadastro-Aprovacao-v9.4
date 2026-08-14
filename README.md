@@ -34,3 +34,11 @@ Na importação, **Cadastrar nova liga** sempre cria um identificador exclusivo.
 - Ligas compartilhadas são cadastradas somente pelo administrador. Cada usuário possui ID, configurações e histórico privados em tabelas separadas por `user_id`.
 
 Para atualizar o mesmo site, preserve `DATABASE_URL`, `SESSION_SECRET` e `OPENROUTER_API_KEY`. Adicione `API_FOOTBALL_KEY` para ativar classificação e jogos ao vivo. O plano gratuito possui 100 chamadas diárias, por isso a V11 usa cache e atualização sob demanda.
+
+## Atualização automática e histórico gerado pela API
+
+A versão atualizada guarda a classificação oficial e as partidas encerradas separadamente dos CSVs manuais. Ela atualiza somente a temporada cadastrada, preserva a última resposta válida em caso de falha e permite baixar um CSV por time nas condições Geral, Mandante e Visitante.
+
+No Render, mantenha `CRON_SECRET` criado pelo `render.yaml`. No GitHub, crie dois segredos do repositório: `SITE_URL` com o endereço público do site sem barra final e `CRON_SECRET` com o mesmo valor usado no Render. O fluxo `.github/workflows/atualizar-futebol.yml` fará uma atualização diária após o encerramento dos jogos. O botão do Painel Admin permite atualizar todas as ligas a qualquer momento, e a liga selecionada também usa cache inteligente.
+
+O plano grátis da API-Football fornece 100 consultas diárias. Cada liga vinculada consome normalmente duas consultas durante a sincronização completa: classificação e partidas encerradas. Por isso o agendamento completo ocorre uma vez ao dia. Estatísticas detalhadas como cantos e finalizações são salvas somente quando a fonte as fornece; valores ausentes nunca são inventados.

@@ -51,6 +51,13 @@ export function initDb() {
   over55 DOUBLE PRECISION NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL
  );
  CREATE UNIQUE INDEX IF NOT EXISTS referees_name_unique_ci ON referees(lower(name));
+ CREATE TABLE IF NOT EXISTS league_api_sync (
+  league_id TEXT PRIMARY KEY REFERENCES leagues(id) ON DELETE CASCADE,
+  api_league_id INTEGER, season INTEGER, standings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  games JSONB NOT NULL DEFAULT '[]'::jsonb, status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT NOT NULL DEFAULT '', current_round TEXT NOT NULL DEFAULT '',
+  remaining INTEGER, updated_at BIGINT NOT NULL DEFAULT 0
+ );
  CREATE INDEX IF NOT EXISTS analysis_history_user_idx ON analysis_history(user_id,created_at DESC)`,
       )
       .then(() => undefined);
@@ -59,7 +66,10 @@ export function initDb() {
 export async function listLeagues(): Promise<League[]> {
   await initDb();
   const { rows } = await pool.query(
-    "SELECT id,code,country,name,season,file_name,games,updated_at,data_quality FROM leagues ORDER BY country,name,season",
+    `SELECT l.id,l.code,l.country,l.name,l.season,l.file_name,l.games,l.updated_at,l.data_quality,
+      s.games api_games,s.updated_at api_updated_at,s.status api_status,s.error api_error,
+      s.current_round api_round,s.remaining api_remaining
+     FROM leagues l LEFT JOIN league_api_sync s ON s.league_id=l.id ORDER BY l.country,l.name,l.season`,
   );
   return rows.map((r) => ({
     id: r.id,
@@ -71,5 +81,6 @@ export async function listLeagues(): Promise<League[]> {
     games: r.games,
     quality: r.data_quality,
     updatedAt: Number(r.updated_at),
+    apiSync: r.api_updated_at ? {updatedAt:Number(r.api_updated_at),status:r.api_status,error:r.api_error,round:r.api_round,remaining:r.api_remaining,games:r.api_games||[]} : undefined,
   }));
 }

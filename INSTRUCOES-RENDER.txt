@@ -29,8 +29,17 @@ PARTE 3 — PUBLICAR GRATUITAMENTE NO RENDER
 4. Quando solicitar OPENROUTER_API_KEY, cole a chave gratuita do OpenRouter.
 5. Em https://dashboard.api-football.com/register crie a conta gratuita e copie a API Key.
 6. No Render, crie a variável API_FOOTBALL_KEY e cole essa chave. Não altere DATABASE_URL.
-7. Escolha o plano Free e conclua o Blueprint.
-8. Aguarde o status Live e abra o endereço fornecido pelo Render.
+7. Confirme que a variável CRON_SECRET foi criada pelo Blueprint.
+8. Escolha o plano Free e conclua o Blueprint.
+9. Aguarde o status Live e abra o endereço fornecido pelo Render.
+
+ATUALIZAÇÃO AUTOMÁTICA PELO GITHUB
+
+1. No GitHub, abra Settings > Secrets and variables > Actions.
+2. Crie SITE_URL com o endereço público do site, sem barra no final.
+3. Crie CRON_SECRET com exatamente o mesmo valor configurado no Render.
+4. O arquivo .github/workflows/atualizar-futebol.yml atualizará classificações e jogos diariamente.
+5. O Painel Admin também possui o botão Atualizar todas agora.
 
 O SESSION_SECRET é criado automaticamente e sem custo pelo Render.
 O CSV fica no PostgreSQL e é compartilhado entre todos os acessos do site.
@@ -60,6 +69,6 @@ LIMITES DOS PLANOS GRATUITOS
 - O Render pode adormecer o site após inatividade; o primeiro acesso pode demorar.
 - O Neon Free possui limites de armazenamento e processamento.
 - O OpenRouter Free possui limite diário e pode ficar temporariamente indisponível.
-- A API-Football gratuita oferece 100 chamadas por dia. A V11 usa cache, atualização sob demanda e mantém o modo manual disponível. Quando a API não retornar uma liga, Geral, Mandante, Visitante e forma continuam sendo calculados pelo CSV.
+- A API-Football gratuita oferece 100 chamadas por dia. A V11 usa cache, atualização diária e atualização sob demanda. Se a API não confirmar a liga e a temporada atual, a classificação não será exibida. O CSV continua exclusivo das análises estatísticas.
 - Você cadastra as ligas uma vez para todos. O banco usa o ID da conta para separar histórico e configurações privadas de cada usuário.
 - Não é necessário cadastrar cartão para o funcionamento descrito neste projeto.

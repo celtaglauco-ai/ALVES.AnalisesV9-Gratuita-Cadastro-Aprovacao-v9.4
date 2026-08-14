@@ -43,4 +43,12 @@ export type League = {
   updatedAt: number;
   games: Game[];
   quality?: DataQuality;
+  apiSync?: {
+    updatedAt: number;
+    status: string;
+    error?: string;
+    round?: string;
+    remaining?: number | null;
+    games: Game[];
+  };
 };
