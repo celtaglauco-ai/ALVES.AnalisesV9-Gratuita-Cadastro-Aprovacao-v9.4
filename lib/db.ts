@@ -42,6 +42,15 @@ export function initDb() {
   mode TEXT NOT NULL, league_id TEXT, home TEXT NOT NULL, away TEXT NOT NULL,
   snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at BIGINT NOT NULL
  );
+ CREATE TABLE IF NOT EXISTS referees (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT '', league_id TEXT NOT NULL DEFAULT '',
+  games INTEGER NOT NULL DEFAULT 0, fouls_per_game DOUBLE PRECISION NOT NULL DEFAULT 0,
+  yellow_per_game DOUBLE PRECISION NOT NULL DEFAULT 0, red_per_game DOUBLE PRECISION NOT NULL DEFAULT 0,
+  home_yellow DOUBLE PRECISION NOT NULL DEFAULT 0, away_yellow DOUBLE PRECISION NOT NULL DEFAULT 0,
+  over35 DOUBLE PRECISION NOT NULL DEFAULT 0, over45 DOUBLE PRECISION NOT NULL DEFAULT 0,
+  over55 DOUBLE PRECISION NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL
+ );
+ CREATE UNIQUE INDEX IF NOT EXISTS referees_name_unique_ci ON referees(lower(name));
  CREATE INDEX IF NOT EXISTS analysis_history_user_idx ON analysis_history(user_id,created_at DESC)`,
       )
       .then(() => undefined);
