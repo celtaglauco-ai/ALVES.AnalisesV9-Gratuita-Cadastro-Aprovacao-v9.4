@@ -3,7 +3,7 @@ import { isAdmin } from "@/lib/auth";
 import { initDb, pool } from "@/lib/db";
 import { recordSyncError, syncLeague } from "@/lib/football-api";
 
-const cronAllowed=(req:Request)=>{const secret=process.env.CRON_SECRET?.trim(),authorization=req.headers.get("authorization")||"",provided=authorization.replace(/^Bearer\s+/i,"").trim();return !!secret&&!!provided&&provided===secret};
+const cronAllowed=(req:Request)=>{const secret=process.env.CRON_SECRET?.trim(),authorization=req.headers.get("authorization")||"",headerToken=authorization.replace(/^Bearer\s+/i,"").trim(),queryToken=new URL(req.url).searchParams.get("cron")?.trim()||"";return !!secret&&(headerToken===secret||queryToken===secret)};
 export async function POST(req:Request){
  if(!cronAllowed(req)&&!(await isAdmin()))return NextResponse.json({error:"Acesso administrativo obrigatório."},{status:401});
  const key=process.env.API_FOOTBALL_KEY;if(!key)return NextResponse.json({error:"API-Football não configurada."},{status:503});
