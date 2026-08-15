@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Atualizar todas as competicoes cadastradas
         run: |
-          curl --fail --show-error --silent --max-time 900 \
+          curl --fail-with-body --show-error --max-time 900 \
             -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.SITE_URL }}/api/admin/sync"
+            "${{ secrets.SITE_URL }}/api/admin/sync?cron=${{ secrets.CRON_SECRET }}"
