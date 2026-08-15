@@ -933,54 +933,6 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-              {(tab==="pre"||tab==="ai")&&<section className="panel">
-                <div className="panel-head">
-                  <i className="green">⌄</i>
-                  <div>
-                    <h3>Selecione a partida</h3>
-                    <p>As setas abrem a lista de ligas e times</p>
-                  </div>
-                  {(home||away)&&<button className="clear-context" onClick={clearPreAnalysis}>× Limpar seleção</button>}
-                </div>
-                <div className="cross-grid">
-                  <Select
-                    label="Liga da casa"
-                    value={leagueId}
-                    set={setLeagueId}
-                    placeholder="Selecionar liga..."
-                    options={leagues.map((l) => [
-                      l.id,
-                      `${l.country} — ${l.name} (${l.season})`,
-                    ])}
-                  />
-                  <Select
-                    label="Casa"
-                    value={home}
-                    set={setHome}
-                    placeholder="Selecionar time da casa..."
-                    options={teams.map((t) => [t, t])}
-                    disabled={!league}
-                  />
-                  <Select
-                    label="Liga do visitante"
-                    value={awayLeagueId}
-                    set={setAwayLeagueId}
-                    placeholder="Selecionar liga visitante..."
-                    options={leagues.map((l) => [
-                      l.id,
-                      `${l.country} — ${l.name} (${l.season})`,
-                    ])}
-                  />
-                  <Select
-                    label="Fora"
-                    value={away}
-                    set={setAway}
-                    placeholder="Selecionar time visitante..."
-                    options={awayTeams.map((t) => [t, t])}
-                    disabled={!awayLeague}
-                  />
-                </div>
-              </section>}
               {tab==="pre"&&<section className="panel team-focus-panel">
                 <div className="panel-head"><i className="blue">⌁</i><div><h3>Raio-X de um time específico</h3><p>Selecione uma equipe para visualizar sua produção nos últimos jogos e por períodos da partida</p></div>{xrayTeam&&<button className="clear-context" onClick={()=>setXrayTeam("")}>× Limpar time</button>}</div>
                 <div className="team-focus-selectors"><Select label="Competição" value={xrayLeagueId} set={setXrayLeagueId} placeholder="Selecionar liga..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/><Select label="Time para o Raio-X" value={xrayTeam} set={setXrayTeam} placeholder="Selecionar time..." options={xrayTeams.map(t=>[t,t])} disabled={!xrayLeague}/></div>
@@ -992,6 +944,19 @@ export default function Home() {
                   </div>
                   <footer>Fonte: histórico cadastrado da competição • gols e escanteios são mostrados somente quando existem nas colunas do arquivo.</footer>
                 </div>}
+              </section>}
+              {(tab==="pre"||tab==="ai")&&<section className="panel">
+                <div className="panel-head">
+                  <i className="green">⌄</i>
+                  <div><h3>Selecione a partida</h3><p>As setas abrem a lista de ligas e times</p></div>
+                  {(home||away)&&<button className="clear-context" onClick={clearPreAnalysis}>× Limpar seleção</button>}
+                </div>
+                <div className="cross-grid">
+                  <Select label="Liga da casa" value={leagueId} set={setLeagueId} placeholder="Selecionar liga..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/>
+                  <Select label="Casa" value={home} set={setHome} placeholder="Selecionar time da casa..." options={teams.map(t=>[t,t])} disabled={!league}/>
+                  <Select label="Liga do visitante" value={awayLeagueId} set={setAwayLeagueId} placeholder="Selecionar liga visitante..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/>
+                  <Select label="Fora" value={away} set={setAway} placeholder="Selecionar time visitante..." options={awayTeams.map(t=>[t,t])} disabled={!awayLeague}/>
+                </div>
               </section>}
             </>
           )}
