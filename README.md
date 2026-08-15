@@ -30,10 +30,10 @@ Na importação, **Cadastrar nova liga** sempre cria um identificador exclusivo.
 - Forma dos últimos cinco jogos em V, E e D, comparativo casa/fora e confrontos diretos.
 - Estatísticas do árbitro quando o CSV contém a coluna `Referee`.
 - Leitura opcional de xG, posse e faltas quando essas colunas existirem.
-- Integração com a API-Football para classificação atual Geral/Mandante/Visitante, placares e estatísticas dos jogos ao vivo. O CSV continua sendo a fonte histórica e de segurança.
+- Integração com a Football-Data.org para classificação atual Geral/Mandante/Visitante, partidas e placares. O CSV continua sendo a fonte das estatísticas detalhadas e do histórico complementar.
 - Ligas compartilhadas são cadastradas somente pelo administrador. Cada usuário possui ID, configurações e histórico privados em tabelas separadas por `user_id`.
 
-Para atualizar o mesmo site, preserve `DATABASE_URL`, `SESSION_SECRET` e `OPENROUTER_API_KEY`. Adicione `API_FOOTBALL_KEY` para ativar classificação e jogos ao vivo. O plano gratuito possui 100 chamadas diárias, por isso a V11 usa cache e atualização sob demanda.
+Para atualizar o mesmo site, preserve `DATABASE_URL`, `SESSION_SECRET`, `OPENROUTER_API_KEY` e `FOOTBALL_DATA_TOKEN`. A Football-Data.org fornece as classificações e partidas das competições liberadas; o sistema usa cache e atualização automática.
 
 ## Atualização automática e histórico gerado pela API
 
@@ -41,4 +41,4 @@ A versão atualizada guarda a classificação oficial e as partidas encerradas s
 
 No Render, mantenha `CRON_SECRET` criado pelo `render.yaml`. No GitHub, crie dois segredos do repositório: `SITE_URL` com o endereço público do site sem barra final e `CRON_SECRET` com o mesmo valor usado no Render. O fluxo `.github/workflows/atualizar-futebol.yml` fará uma atualização diária após o encerramento dos jogos. O botão do Painel Admin permite atualizar todas as ligas a qualquer momento, e a liga selecionada também usa cache inteligente.
 
-O plano grátis da API-Football fornece 100 consultas diárias. Cada liga vinculada consome normalmente duas consultas durante a sincronização completa: classificação e partidas encerradas. Por isso o agendamento completo ocorre uma vez ao dia. Estatísticas detalhadas como cantos e finalizações são salvas somente quando a fonte as fornece; valores ausentes nunca são inventados.
+O plano grátis da Football-Data.org limita a quantidade de competições e requisições. O sistema respeita o intervalo gratuito e exibe publicamente somente ligas atualizadas com sucesso. Estatísticas detalhadas como cantos e finalizações vêm do CSV associado quando disponíveis; valores ausentes nunca são inventados.

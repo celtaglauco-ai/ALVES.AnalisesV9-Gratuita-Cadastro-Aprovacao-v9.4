@@ -27,8 +27,8 @@ PARTE 3 — PUBLICAR GRATUITAMENTE NO RENDER
 2. No Render, escolha New > Blueprint e conecte o repositório.
 3. Quando o Render solicitar DATABASE_URL, cole a Connection string do Neon.
 4. Quando solicitar OPENROUTER_API_KEY, cole a chave gratuita do OpenRouter.
-5. Em https://dashboard.api-football.com/register crie a conta gratuita e copie a API Key.
-6. No Render, crie a variável API_FOOTBALL_KEY e cole essa chave. Não altere DATABASE_URL.
+5. Em https://www.football-data.org/client/register crie a conta gratuita e copie o token.
+6. No Render, crie a variável FOOTBALL_DATA_TOKEN e cole esse token. Não altere DATABASE_URL.
 7. Confirme que a variável CRON_SECRET foi criada pelo Blueprint.
 8. Escolha o plano Free e conclua o Blueprint.
 9. Aguarde o status Live e abra o endereço fornecido pelo Render.
@@ -69,6 +69,6 @@ LIMITES DOS PLANOS GRATUITOS
 - O Render pode adormecer o site após inatividade; o primeiro acesso pode demorar.
 - O Neon Free possui limites de armazenamento e processamento.
 - O OpenRouter Free possui limite diário e pode ficar temporariamente indisponível.
-- A API-Football gratuita oferece 100 chamadas por dia. A V11 usa cache, atualização diária e atualização sob demanda. Se a API não confirmar a liga e a temporada atual, a classificação não será exibida. O CSV continua exclusivo das análises estatísticas.
+- A Football-Data.org gratuita possui limite de requisições e competições. A V11 usa cache, atualização diária e mostra somente ligas confirmadas. O CSV fornece as estatísticas detalhadas quando disponíveis.
 - Você cadastra as ligas uma vez para todos. O banco usa o ID da conta para separar histórico e configurações privadas de cada usuário.
 - Não é necessário cadastrar cartão para o funcionamento descrito neste projeto.
