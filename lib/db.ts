@@ -58,6 +58,13 @@ export function initDb() {
   error TEXT NOT NULL DEFAULT '', current_round TEXT NOT NULL DEFAULT '',
   remaining INTEGER, updated_at BIGINT NOT NULL DEFAULT 0
  );
+ CREATE TABLE IF NOT EXISTS live_stat_snapshots (
+  id TEXT PRIMARY KEY, fixture_id TEXT NOT NULL, provider TEXT NOT NULL DEFAULT '', league_id TEXT NOT NULL DEFAULT '',
+  home TEXT NOT NULL, away TEXT NOT NULL, minute INTEGER NOT NULL, stats JSONB NOT NULL DEFAULT '{}'::jsonb,
+  captured_at BIGINT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS live_snapshots_fixture_idx ON live_stat_snapshots(fixture_id,captured_at);
+ CREATE INDEX IF NOT EXISTS live_snapshots_teams_idx ON live_stat_snapshots(lower(home),lower(away),captured_at DESC);
  CREATE INDEX IF NOT EXISTS analysis_history_user_idx ON analysis_history(user_id,created_at DESC)`,
       )
       .then(() => undefined);

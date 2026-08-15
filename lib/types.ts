@@ -22,6 +22,10 @@ export type Game = {
   axg?: number;
   hp?: number;
   ap?: number;
+  homeGoalMinutes?: number[];
+  awayGoalMinutes?: number[];
+  homeCornerMinutes?: number[];
+  awayCornerMinutes?: number[];
 };
 export type DataQuality = {
   goals: boolean;

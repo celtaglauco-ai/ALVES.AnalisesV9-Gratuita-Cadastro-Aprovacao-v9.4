@@ -17,6 +17,8 @@ type StandingRow = { team:string; logo?:string; p:number; j:number; v:number; e:
 type LiveApiGame={provider:"api-football"|"football-data";id:number;date:string;minute:number;status:string;statusLong:string;leagueId:number;registeredLeagueId:string;registeredLeagueName:string;league:string;country:string;home:string;away:string;homeLogo?:string;awayLogo?:string;hg:number;ag:number};
 type ApiLeagueOption={id:number|string;name:string;country:string;season:number;logo?:string};
 type ManualReferee={id:string;name:string;country:string;leagueId:string;games:number;foulsPerGame:number;yellowPerGame:number;redPerGame:number;homeYellow:number;awayYellow:number;over35:number;over45:number;over55:number;updatedAt:number};
+type PreChartMetric="goals"|"conceded"|"corners"|"cards"|"shots"|"onTarget";
+type LineSeries={name:string;color:string;values:number[];dashed?:boolean;icon?:string};
 const emptyReferee={id:"",name:"",country:"",leagueId:"",games:0,foulsPerGame:0,yellowPerGame:0,redPerGame:0,homeYellow:0,awayYellow:0,over35:0,over45:0,over55:0};
 const codes: Record<string, [string, string]> = {
   E0: ["Inglaterra", "Premier League"],
@@ -37,6 +39,7 @@ const codes: Record<string, [string, string]> = {
   USA: ["Estados Unidos", "MLS"],
 };
 const n = (v: unknown) => Number(String(v ?? "").replace(",", ".")) || 0,
+  minuteList=(v:unknown)=>String(v??"").split(/[|;/ ]+/).map(x=>Number(x.replace(/\D/g,""))).filter(x=>x>0&&x<=130),
   avg = (a: number[]) =>
     a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0,
   pct = <T,>(a: T[], f: (x: T) => boolean) =>
@@ -108,6 +111,10 @@ function parse(text: string) {
       axg: n(get(x, "AxG", "AwayXG", "xGAway")),
       hp: n(get(x, "HP", "HomePossession", "PossessionHome")),
       ap: n(get(x, "AP", "AwayPossession", "PossessionAway")),
+      homeGoalMinutes: minuteList(get(x,"HomeGoalMinutes","HGMinutes","MinutosGolsCasa")),
+      awayGoalMinutes: minuteList(get(x,"AwayGoalMinutes","AGMinutes","MinutosGolsFora")),
+      homeCornerMinutes: minuteList(get(x,"HomeCornerMinutes","HCMinutes","MinutosCantosCasa")),
+      awayCornerMinutes: minuteList(get(x,"AwayCornerMinutes","ACMinutes","MinutosCantosFora")),
     }));
   if (!games.length) throw Error("Nenhuma partida válida encontrada.");
   const first = row(r[1], delimiter),
@@ -155,6 +162,30 @@ function buildTable(games: Game[], mode: TableMode): StandingRow[] {
   });
   return [...map.values()].map(r=>({...r,sg:r.gp-r.gc,form:r.form.slice(-5)})).sort((a,b)=>b.p-a.p||b.sg-a.sg||b.gp-a.gp||a.team.localeCompare(b.team));
 }
+function TrendLineChart({series,labels}:{series:LineSeries[];labels:string[]}) {
+  const width=760,height=285,left=43,right=18,top=20,bottom=42,
+    plotW=width-left-right,plotH=height-top-bottom,
+    all=series.flatMap(s=>s.values).filter(Number.isFinite),max=Math.max(1,...all),
+    ceiling=Math.max(1,Math.ceil(max)),steps=4,
+    x=(i:number,count:number)=>left+(count<=1?plotW/2:i*plotW/(count-1)),
+    y=(v:number)=>top+plotH-(v/ceiling)*plotH,
+    points=(values:number[])=>values.map((v,i)=>`${x(i,values.length)},${y(v)}`).join(" ");
+  return <div className="trend-chart-wrap">
+    <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Gráfico de evolução dos últimos jogos">
+      <defs>
+        <linearGradient id="trendArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#36df91" stopOpacity=".18"/><stop offset="1" stopColor="#36df91" stopOpacity="0"/></linearGradient>
+        <filter id="trendGlow"><feGaussianBlur stdDeviation="2.4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      {Array.from({length:steps+1},(_,i)=>{const value=ceiling-(ceiling/steps)*i,py=top+(plotH/steps)*i;return <g key={i}><line x1={left} x2={width-right} y1={py} y2={py} className="trend-grid-line"/><text x={left-10} y={py+4} className="trend-axis-y">{value%1?value.toFixed(1):value}</text></g>})}
+      {labels.map((label,i)=><g key={`${label}-${i}`}><line x1={x(i,labels.length)} x2={x(i,labels.length)} y1={top} y2={top+plotH} className="trend-grid-vertical"/><text x={x(i,labels.length)} y={height-14} className="trend-axis-x">{label}</text></g>)}
+      {series.map((s,si)=>s.values.length?<g key={s.name} className="trend-series">
+        {si===0&&s.values.length>1&&<polygon points={`${left},${top+plotH} ${points(s.values)} ${x(s.values.length-1,s.values.length)},${top+plotH}`} fill="url(#trendArea)"/>}
+        <polyline points={points(s.values)} fill="none" stroke={s.color} strokeWidth={s.dashed?2.5:4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.dashed?"9 8":undefined} filter={s.dashed?undefined:"url(#trendGlow)"}/>
+        {!s.dashed&&s.values.map((v,i)=><g key={i}><circle cx={x(i,s.values.length)} cy={y(v)} r="6" fill="#0b1728" stroke={s.color} strokeWidth="3"><title>{s.name}: {v.toFixed(1)} no ponto {i+1}</title></circle>{s.icon&&<text x={x(i,s.values.length)} y={y(v)-14} className="trend-point-icon">{s.icon}</text>}<text x={x(i,s.values.length)} y={y(v)+(s.icon?-25:-11)} className="trend-value" style={{fill:s.color}}>{v.toFixed(1)}</text></g>)}
+      </g>:null)}
+    </svg>
+  </div>;
+}
 export default function Home() {
   const [tab, setTab] = useState<Tab>("pre"),
     [leagues, setLeagues] = useState<League[]>([]),
@@ -170,6 +201,7 @@ export default function Home() {
     [authMode, setAuthMode] = useState<"login" | "register">("login"),
     [login, setLogin] = useState(false),
     [credentials, setCredentials] = useState({ username: "", password: "" }),
+    [rememberLogin,setRememberLogin]=useState(true),
     [register, setRegister] = useState({
       name: "",
       email: "",
@@ -192,6 +224,10 @@ export default function Home() {
     [apiLeagueOptions,setApiLeagueOptions]=useState<ApiLeagueOption[]>([]),
     [apiLeagueLoading,setApiLeagueLoading]=useState(false),
     [analyzed, setAnalyzed] = useState(false),
+    [preChartMetric,setPreChartMetric]=useState<PreChartMetric>("goals"),
+    [xrayLeagueId,setXrayLeagueId]=useState(""),
+    [xrayTeam,setXrayTeam]=useState(""),
+    [xrayMinuteHistory,setXrayMinuteHistory]=useState<{labels:string[];goals:number[];corners:number[];cards:number[];shots:number[];onTarget:number[];snapshots:number}>({labels:[],goals:[],corners:[],cards:[],shots:[],onTarget:[],snapshots:0}),
     [tableMode, setTableMode] = useState<TableMode>("TOTAL"),
     [teamSearch, setTeamSearch] = useState(""),
     [leagueSearch,setLeagueSearch]=useState(""),
@@ -292,6 +328,8 @@ export default function Home() {
   useEffect(() => {
     setAway("");
   }, [awayLeagueId]);
+  useEffect(()=>{setXrayTeam("")},[xrayLeagueId]);
+  useEffect(()=>{if(!xrayTeam){setXrayMinuteHistory({labels:[],goals:[],corners:[],cards:[],shots:[],onTarget:[],snapshots:0});return}fetch(`/api/live/history?team=${encodeURIComponent(xrayTeam)}`,{cache:"no-store"}).then(r=>r.json()).then(d=>{if(d.available)setXrayMinuteHistory(d.history)}).catch(()=>{})},[xrayTeam]);
   const stats = (
     source: League | undefined,
     team: string,
@@ -446,6 +484,24 @@ export default function Home() {
     projectedOver55=refereeStats?refereeStats.over55*.55+pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=6)*.45:pct([...homeDiscipline,...awayDiscipline],g=>g.hy+g.ay+g.hr+g.ar>=6),
     redRisk=refereeStats?Math.min(80,refereeStats.red*100):pct([...homeDiscipline,...awayDiscipline],g=>g.hr+g.ar>0),
     h2h=league&&league.id===awayLeague?.id?league.games.filter(g=>(g.home===home&&g.away===away)||(g.home===away&&g.away===home)).slice(-5):[],
+    homeChartGames=league&&home?league.games.filter(g=>g.home===home).slice(-8):[],
+    awayChartGames=awayLeague&&away?awayLeague.games.filter(g=>g.away===away).slice(-8):[],
+    chartMetricValue=(g:Game,venue:"home"|"away",metric:PreChartMetric)=>metric==="goals"?(venue==="home"?g.hg:g.ag):metric==="conceded"?(venue==="home"?g.ag:g.hg):metric==="corners"?(venue==="home"?g.hc:g.ac):metric==="cards"?(venue==="home"?g.hy+g.hr:g.ay+g.ar):metric==="shots"?(venue==="home"?g.hs:g.as):(venue==="home"?g.hst:g.ast),
+    homeChartValues=homeChartGames.map(g=>chartMetricValue(g,"home",preChartMetric)),
+    awayChartValues=awayChartGames.map(g=>chartMetricValue(g,"away",preChartMetric)),
+    preChartCount=Math.max(homeChartValues.length,awayChartValues.length),
+    chartReference=Array.from({length:preChartCount},(_,i)=>avg([homeChartValues[i],awayChartValues[i]].filter((v):v is number=>Number.isFinite(v)))),
+    xrayLeague=leagues.find(l=>l.id===xrayLeagueId),
+    xrayTeams=xrayLeague?[...new Set(xrayLeague.games.flatMap(g=>[g.home,g.away]))].sort():[],
+    xrayGames=xrayLeague&&xrayTeam?xrayLeague.games.filter(g=>g.home===xrayTeam||g.away===xrayTeam).slice(-10):[],
+    xrayGoals=xrayGames.map(g=>g.home===xrayTeam?g.hg:g.ag),
+    xrayCorners=xrayGames.map(g=>g.home===xrayTeam?g.hc:g.ac),
+    periodLabels=["0–15","16–30","31–45+","46–60","61–75","76–90+"],
+    periodIndex=(minute:number)=>minute<=15?0:minute<=30?1:minute<=45?2:minute<=60?3:minute<=75?4:5,
+    xrayGoalPeriods=xrayGames.reduce((values,g)=>{const minutes=g.home===xrayTeam?g.homeGoalMinutes:g.awayGoalMinutes;(minutes||[]).forEach(m=>values[periodIndex(m)]++);return values},[0,0,0,0,0,0]),
+    xrayCornerPeriods=xrayGames.reduce((values,g)=>{const minutes=g.home===xrayTeam?g.homeCornerMinutes:g.awayCornerMinutes;(minutes||[]).forEach(m=>values[periodIndex(m)]++);return values},[0,0,0,0,0,0]),
+    xrayHasGoalMinutes=xrayGames.some(g=>(g.home===xrayTeam?g.homeGoalMinutes:g.awayGoalMinutes)?.length),
+    xrayHasCornerMinutes=xrayGames.some(g=>(g.home===xrayTeam?g.homeCornerMinutes:g.awayCornerMinutes)?.length),
     selectedLiveGame=liveApiGames.find(g=>g.id===selectedLiveId),
     liveCompetitions=[...new Set(liveApiGames.map(g=>g.league))].sort(),
     visibleLiveGames=liveApiGames.filter(g=>{
@@ -465,6 +521,8 @@ export default function Home() {
   const clearLiveAnalysis=()=>{setSelectedLiveId(null);setLiveAiAnalysis("");setAnalyzed(false);setLive({minute:0,hg:0,ag:0,hc:0,ac:0,shots:0,sot:0,yellow:0,red:0,attacksHome:0,attacksAway:0,dangerHome:0,dangerAway:0,shotsHome:0,shotsAway:0,sotHome:0,sotAway:0,yellowHome:0,yellowAway:0,redHome:0,redAway:0,possessionHome:0,possessionAway:0,pressureHome:0,pressureAway:0,xgHome:0,xgAway:0,savesHome:0,savesAway:0})};
   const fetchLiveGames=async()=>{clearLiveAnalysis();setLiveApiLoading(true);setLiveApiInfo("Consultando jogos de hoje e partidas ao vivo...");try{const r=await fetch(`/api/live?refresh=${Date.now()}`,{cache:"no-store"}),d=await r.json();if(d.available){setLiveApiGames(d.games||[]);setLiveApiInfo(d.games?.length?`${d.games.length} partidas encontradas em ${d.source||"consulta atual"} • cota restante: ${d.remaining||"—"}`:(d.reason||"Nenhum jogo foi encontrado nas ligas cadastradas."))}else setLiveApiInfo(`API: ${d.reason||"indisponível"}${d.remaining?` • cota restante: ${d.remaining}`:""}`)}catch{setLiveApiInfo("Falha ao consultar a API. Atualize a página e tente novamente.")}finally{setLiveApiLoading(false)}};
   const loadLiveStats=async(g:LiveApiGame)=>{setLiveApiLoading(true);try{const r=await fetch(`/api/live?id=${g.id}`,{cache:"no-store"}),d=await r.json(),teams=d.statistics||[];const values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value]));const h=values(0),a=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%",""));setLive(x=>({...x,minute:g.minute||x.minute,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(a,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(a,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(a,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(a,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(a,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(a,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(a,"Goalkeeper Saves")}));setAnalyzed(false);setLiveApiInfo(`${g.home} × ${g.away}: dados carregados. Você ainda pode editar manualmente.`)}finally{setLiveApiLoading(false)}};
+  const saveLiveSnapshot=async()=>{if(!selectedLiveGame)return;const minute=live.minute||selectedLiveGame.minute;if(!minute)return;await fetch("/api/live/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fixtureId:selectedLiveGame.id,provider:selectedLiveGame.provider,leagueId:selectedLiveGame.registeredLeagueId,home:selectedLiveGame.home,away:selectedLiveGame.away,minute,stats:{hg:live.hg||selectedLiveGame.hg,ag:live.ag||selectedLiveGame.ag,hc:live.hc,ac:live.ac,shotsHome:live.shotsHome,shotsAway:live.shotsAway,sotHome:live.sotHome,sotAway:live.sotAway,yellowHome:live.yellowHome,yellowAway:live.yellowAway,redHome:live.redHome,redAway:live.redAway}})}).catch(()=>{})};
+  useEffect(()=>{if(!selectedLiveGame)return;saveLiveSnapshot();const timer=setInterval(saveLiveSnapshot,5*60*1000);return()=>clearInterval(timer)},[selectedLiveId,live.minute,live.hg,live.ag,live.hc,live.ac,live.shotsHome,live.shotsAway,live.sotHome,live.sotAway,live.yellowHome,live.yellowAway,live.redHome,live.redAway]);
   const analyzeLiveGame=async(g:LiveApiGame)=>{const src=leagues.find(l=>l.id===g.registeredLeagueId),norm=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,""),findTeam=(name:string)=>src?[...new Set(src.games.flatMap(x=>[x.home,x.away]))].find(t=>norm(t).includes(norm(name))||norm(name).includes(norm(t))):undefined,homeName=findTeam(g.home),awayName=findTeam(g.away),recent=(team?:string)=>team&&src?src.games.filter(x=>x.home===team||x.away===team).slice(-5):[],hr=recent(homeName),ar=recent(awayName),teamGoals=(games:Game[],team?:string)=>avg(games.map(x=>x.home===team?x.hg:x.ag)),teamConceded=(games:Game[],team?:string)=>avg(games.map(x=>x.home===team?x.ag:x.hg)),historyText=hr.length||ar.length?`Histórico CSV: ${homeName||g.home} marcou média ${teamGoals(hr,homeName).toFixed(2)} e sofreu ${teamConceded(hr,homeName).toFixed(2)} nos últimos ${hr.length} jogos; ${awayName||g.away} marcou ${teamGoals(ar,awayName).toFixed(2)} e sofreu ${teamConceded(ar,awayName).toFixed(2)} nos últimos ${ar.length}.`:`Não existe histórico CSV compatível para este confronto.`,localAnalysis=`ANÁLISE ESTATÍSTICA DISPONÍVEL\n${g.home} ${g.hg} × ${g.ag} ${g.away}\nSituação informada: ${g.statusLong}${g.minute?` aos ${g.minute} minutos`:""}.\n${historyText}\nLeitura: ${g.hg===g.ag?"o placar está equilibrado":g.hg>g.ag?`${g.home} aparece em vantagem`:`${g.away} aparece em vantagem`}. Sem chutes, escanteios ou cartões confirmados, não é seguro indicar pressão nem projetar esses mercados.`;setSelectedLiveId(g.id);setLiveAiAnalysis(localAnalysis);setLiveApiLoading(true);try{const statsResponse=await fetch(`/api/live?id=${g.id}&provider=${g.provider}`,{cache:"no-store"}),statsData=await statsResponse.json(),teams=statsData.statistics||[],values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value])),h=values(0),aStats=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%","")),snapshot={minute:g.minute||0,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(aStats,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(aStats,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(aStats,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(aStats,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(aStats,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(aStats,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(aStats,"Goalkeeper Saves")};setLive(x=>({...x,...snapshot,shots:snapshot.shotsHome+snapshot.shotsAway,sot:snapshot.sotHome+snapshot.sotAway,yellow:snapshot.yellowHome+snapshot.yellowAway,red:snapshot.redHome+snapshot.redAway}));if(g.registeredLeagueId){setLeagueId(g.registeredLeagueId);setAwayLeagueId(g.registeredLeagueId)}setHome(homeName||g.home);setAway(awayName||g.away);setLiveApiInfo(`${g.home} × ${g.away}: ${statsData.limited?"placar e histórico carregados; detalhes ao vivo não existem no plano gratuito.":"estatísticas carregadas."}`);const aiResponse=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"Faça uma análise objetiva usando somente os dados fornecidos e o histórico. Não invente estatísticas ausentes. Mostre cenário, tendência de gols e limitações.",history:[],context:{mode:"live",provider:g.provider,league:g.league,country:g.country,home:g.home,away:g.away,status:g.statusLong,history:{home:hr,away:ar},dataLimitation:statsData.limited?statsData.reason:null,live:snapshot}})}),aiData=await aiResponse.json();if(aiResponse.ok&&aiData.answer)setLiveAiAnalysis(`${localAnalysis}\n\nANÁLISE COMPLEMENTAR DA IA\n${aiData.answer}`);else setLiveAiAnalysis(`${localAnalysis}\n\nA IA externa está indisponível agora; a análise estatística local acima continua válida.`)}catch{setLiveAiAnalysis(`${localAnalysis}\n\nNão foi possível consultar a IA externa; a análise estatística local acima continua disponível.`)}finally{setLiveApiLoading(false)}};
   useEffect(()=>{if(tab==="live"&&authenticated&&leagues.length&&!liveAutoLoaded){setLiveAutoLoaded(true);fetchLiveGames()}},[tab,authenticated,leagues.length,liveAutoLoaded]);
   const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});setNotice("Análise salva somente no seu histórico privado.")};
@@ -474,7 +532,7 @@ export default function Home() {
     const r = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
+        body: JSON.stringify({...credentials,remember:rememberLogin}),
       }),
       d = await r.json();
     if (!r.ok) return setNotice(d.error);
@@ -715,6 +773,7 @@ export default function Home() {
                   onKeyDown={(e) => e.key === "Enter" && doLogin()}
                 />
               </label>
+              <label className="remember-login"><input type="checkbox" checked={rememberLogin} onChange={e=>setRememberLogin(e.target.checked)}/><span><b>Manter conectado neste dispositivo</b><small>Não será necessário informar o login novamente por até 30 dias.</small></span></label>
               <button className="primary" onClick={doLogin}>
                 Entrar no sistema
               </button>
@@ -922,6 +981,18 @@ export default function Home() {
                   />
                 </div>
               </section>}
+              {tab==="pre"&&<section className="panel team-focus-panel">
+                <div className="panel-head"><i className="blue">⌁</i><div><h3>Raio-X de um time específico</h3><p>Selecione uma equipe para visualizar sua produção nos últimos jogos e por períodos da partida</p></div>{xrayTeam&&<button className="clear-context" onClick={()=>setXrayTeam("")}>× Limpar time</button>}</div>
+                <div className="team-focus-selectors"><Select label="Competição" value={xrayLeagueId} set={setXrayLeagueId} placeholder="Selecionar liga..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/><Select label="Time para o Raio-X" value={xrayTeam} set={setXrayTeam} placeholder="Selecionar time..." options={xrayTeams.map(t=>[t,t])} disabled={!xrayLeague}/></div>
+                {!xrayTeam?<div className="team-focus-empty"><span>⚽</span><b>Escolha uma liga e um time</b><small>Os gráficos serão montados automaticamente somente com os dados reais disponíveis.</small></div>:<div className="team-focus-content">
+                  <header><div><small>TIME SELECIONADO</small><h3>{xrayTeam}</h3><p>{xrayLeague?.name} • {xrayGames.length} jogos recentes encontrados</p></div><div className="focus-kpis"><span><i>⚽</i><b>{avg(xrayGoals).toFixed(2)}</b><small>gols/jogo</small></span><span><i>🚩</i><b>{avg(xrayCorners).toFixed(2)}</b><small>cantos/jogo</small></span></div></header>
+                  <div className="team-focus-charts">
+                    <article><div className="focus-chart-title"><span>📈</span><div><h4>Evolução nos últimos jogos</h4><p>Produção do time, do jogo mais antigo ao mais recente</p></div></div><TrendLineChart labels={xrayGames.map((_,i)=>`J${i+1}`)} series={[{name:"Gols",color:"#36df91",values:xrayGoals,icon:"⚽"},{name:"Escanteios",color:"#f0c75e",values:xrayCorners,icon:"🚩"}]}/><div className="focus-chart-legend"><span><i style={{background:"#36df91"}}/>⚽ Gols</span><span><i style={{background:"#f0c75e"}}/>🚩 Escanteios</span></div></article>
+                    <article><div className="focus-chart-title"><span>⏱</span><div><h4>Momentos de maior ocorrência</h4><p>{xrayMinuteHistory.snapshots>=2?`${xrayMinuteHistory.snapshots} fotografias reais • intervalos de 5 minutos`:"Histórico por períodos da partida"}</p></div></div>{xrayMinuteHistory.snapshots>=2?<><TrendLineChart labels={xrayMinuteHistory.labels} series={[{name:"Gols",color:"#36df91",values:xrayMinuteHistory.goals,icon:"⚽"},{name:"Escanteios",color:"#f0c75e",values:xrayMinuteHistory.corners,icon:"🚩"},{name:"Cartões",color:"#ff7188",values:xrayMinuteHistory.cards,icon:"🟨"},{name:"Chutes",color:"#a77cff",values:xrayMinuteHistory.shots,icon:"➤"},{name:"No gol",color:"#4a8fff",values:xrayMinuteHistory.onTarget,icon:"🎯"}]}/><div className="focus-chart-legend"><span>⚽ Gols</span><span>🚩 Escanteios</span><span>🟨 Cartões</span><span>➤ Chutes</span><span>🎯 No gol</span></div></>:xrayHasGoalMinutes||xrayHasCornerMinutes?<><TrendLineChart labels={periodLabels} series={[...(xrayHasGoalMinutes?[{name:"Gols",color:"#36df91",values:xrayGoalPeriods,icon:"⚽"}]:[]),...(xrayHasCornerMinutes?[{name:"Escanteios",color:"#f0c75e",values:xrayCornerPeriods,icon:"🚩"}]:[])]}/><div className="focus-chart-legend"><span>⚽ Gols</span><span>🚩 Escanteios</span></div></>:<div className="timeline-unavailable"><span>⏱</span><b>Histórico por minutos em formação</b><p>O sistema agora registra fotografias reais a cada 5 minutos das partidas acompanhadas ao vivo. Este gráfico aparecerá quando houver pelo menos duas coletas com estatísticas confirmadas; nenhum valor é estimado ou inventado.</p></div>}</article>
+                  </div>
+                  <footer>Fonte: histórico cadastrado da competição • gols e escanteios são mostrados somente quando existem nas colunas do arquivo.</footer>
+                </div>}
+              </section>}
             </>
           )}
           {tab === "standings" && (
@@ -1111,6 +1182,17 @@ export default function Home() {
                     <Compare label="Chutes no gol" left={a!.onTarget} right={b!.onTarget}/>
                     <Compare label="Escanteios totais" left={a!.corners} right={b!.corners}/>
                     <Compare label="Cartões totais" left={a!.cards} right={b!.cards}/>
+                  </div>
+                  <div className="pre-trend-panel">
+                    <header>
+                      <div><small>EVOLUÇÃO PARTIDA A PARTIDA</small><h3>Gráfico de desempenho recente</h3><p>Últimos jogos do mandante em casa × últimos jogos do visitante fora</p></div>
+                      <div className="trend-legend"><span><i style={{background:"#36df91"}}/>{home}</span><span><i style={{background:"#4a8fff"}}/>{away}</span><span><i className="reference"/>Média</span></div>
+                    </header>
+                    <div className="trend-metric-tabs">
+                      {([['goals','⚽ Gols marcados'],['conceded','🥅 Gols sofridos'],['corners','🚩 Escanteios'],['cards','▰ Cartões'],['shots','➤ Finalizações'],['onTarget','🎯 Chutes no gol']] as [PreChartMetric,string][]).map(([key,label])=><button key={key} className={preChartMetric===key?"selected":""} onClick={()=>setPreChartMetric(key)}>{label}</button>)}
+                    </div>
+                    <TrendLineChart labels={Array.from({length:preChartCount},(_,i)=>`J${i+1}`)} series={[{name:home,color:"#36df91",values:homeChartValues,icon:preChartMetric==="goals"||preChartMetric==="conceded"?"⚽":preChartMetric==="corners"?"🚩":preChartMetric==="cards"?"🟨":preChartMetric==="onTarget"?"🎯":"➤"},{name:away,color:"#4a8fff",values:awayChartValues,icon:preChartMetric==="goals"||preChartMetric==="conceded"?"⚽":preChartMetric==="corners"?"🚩":preChartMetric==="cards"?"🟨":preChartMetric==="onTarget"?"🎯":"➤"},{name:"Média de referência",color:"#f0c75e",values:chartReference,dashed:true}]}/>
+                    <footer><span>← mais antigo</span><b>Passe o mouse sobre os pontos para ver os valores</b><span>mais recente →</span></footer>
                   </div>
                 </section>
                 {h2h.length>0&&<section className="panel compact-panel"><div className="panel-head"><i className="blue">↔</i><div><h3>Últimos confrontos diretos</h3><p>Resultados encontrados na liga selecionada</p></div></div><div className="h2h-list">{h2h.map((g,i)=><div key={i}><small>{g.date||g.round||`Jogo ${i+1}`}</small><b>{g.home} {g.hg} × {g.ag} {g.away}</b></div>)}</div></section>}
@@ -1545,6 +1627,7 @@ export default function Home() {
                 onKeyDown={(e) => e.key === "Enter" && doLogin()}
               />
             </label>
+            <label className="remember-login"><input type="checkbox" checked={rememberLogin} onChange={e=>setRememberLogin(e.target.checked)}/><span><b>Manter conectado neste dispositivo</b><small>Use somente em computador ou celular particular.</small></span></label>
             {notice && <div className="error">{notice}</div>}
             <button className="primary" onClick={doLogin}>
               Entrar com segurança
