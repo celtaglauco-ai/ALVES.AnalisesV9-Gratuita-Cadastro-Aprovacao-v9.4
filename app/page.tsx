@@ -17,6 +17,7 @@ type StandingRow = { team:string; logo?:string; p:number; j:number; v:number; e:
 type LiveApiGame={provider:"api-football"|"football-data";id:number;date:string;minute:number;status:string;statusLong:string;leagueId:number;registeredLeagueId:string;registeredLeagueName:string;league:string;country:string;home:string;away:string;homeLogo?:string;awayLogo?:string;hg:number;ag:number};
 type ApiLeagueOption={id:number|string;name:string;country:string;season:number;logo?:string};
 type ManualReferee={id:string;name:string;country:string;leagueId:string;games:number;foulsPerGame:number;yellowPerGame:number;redPerGame:number;homeYellow:number;awayYellow:number;over35:number;over45:number;over55:number;updatedAt:number};
+type RefereeImport=Omit<ManualReferee,"id"|"updatedAt">;
 type PreChartMetric="goals"|"conceded"|"corners"|"cards"|"shots"|"onTarget";
 type LineSeries={name:string;color:string;values:number[];dashed?:boolean;icon?:string};
 type HistoryStats={games:number;goals:number;corners:number;cards:number;shots:number;onTarget:number;scored:number;conceded:number;xg:number;possession:number;over25:number;btts:number;overCorners:number;overCards:number};
@@ -195,6 +196,11 @@ export default function Home() {
     [leagues, setLeagues] = useState<League[]>([]),
     [manualReferees,setManualReferees]=useState<ManualReferee[]>([]),
     [refereeForm,setRefereeForm]=useState({...emptyReferee}),
+    [refereeCsv,setRefereeCsv]=useState(""),
+    [refereeCsvName,setRefereeCsvName]=useState(""),
+    [refereeCsvLeagueId,setRefereeCsvLeagueId]=useState(""),
+    [refereeCsvPreview,setRefereeCsvPreview]=useState<RefereeImport[]>([]),
+    [refereeCsvLoading,setRefereeCsvLoading]=useState(false),
     [leagueId, setLeagueId] = useState(""),
     [awayLeagueId, setAwayLeagueId] = useState(""),
     [home, setHome] = useState(""),
@@ -580,6 +586,7 @@ export default function Home() {
       d = await r.json();
     setNotice(d.message || d.error);
     if (r.ok) {
+      setCredentials({ username: register.email, password: "" });
       setRegister({ name: "", email: "", password: "", confirm: "" });
       setAuthMode("login");
     }
@@ -690,6 +697,9 @@ export default function Home() {
   const saveReferee=async()=>{const r=await fetch("/api/admin/referees",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(refereeForm)}),d=await r.json();if(!r.ok)return setNotice(d.error||"Não foi possível salvar o árbitro.");setRefereeForm({...emptyReferee});setNotice("Árbitro salvo e liberado no seletor de análises.");await load()};
   const editReferee=(r:ManualReferee)=>{setRefereeForm({id:r.id,name:r.name,country:r.country,leagueId:r.leagueId,games:r.games,foulsPerGame:r.foulsPerGame,yellowPerGame:r.yellowPerGame,redPerGame:r.redPerGame,homeYellow:r.homeYellow,awayYellow:r.awayYellow,over35:r.over35,over45:r.over45,over55:r.over55});document.getElementById("referee-admin")?.scrollIntoView({behavior:"smooth"})};
   const deleteReferee=async(id:string)=>{if(!confirm("Excluir este árbitro do cadastro manual?"))return;const r=await fetch(`/api/admin/referees?id=${encodeURIComponent(id)}`,{method:"DELETE"});if(r.ok){if(refereeForm.id===id)setRefereeForm({...emptyReferee});await load()}else setNotice("Não foi possível excluir o árbitro.")};
+  const parseRefereeCsv=()=>{try{const lines=refereeCsv.replace(/^\uFEFF/,"").split(/\r?\n/).filter(Boolean);if(lines.length<2)throw Error("O CSV precisa ter cabeçalho e dados.");const delimiter=(lines[0].match(/;/g)||[]).length>(lines[0].match(/,/g)||[]).length?";":",",headers=row(lines[0],delimiter).map(x=>x.toLowerCase().replace(/[ _-]/g,"")),get=(values:string[],...keys:string[])=>{const index=keys.map(k=>headers.indexOf(k.toLowerCase().replace(/[ _-]/g,""))).find(i=>i>=0);return index===undefined?"":values[index]},selectedLeague=leagues.find(l=>l.id===refereeCsvLeagueId);let preview:RefereeImport[]=[];if(headers.includes("referee")){const groups=new Map<string,{name:string;games:number;fouls:number;yellow:number;red:number;homeYellow:number;awayYellow:number;over35:number;over45:number;over55:number}>();lines.slice(1).map(x=>row(x,delimiter)).forEach(values=>{const name=get(values,"Referee","Arbitro","Árbitro").trim();if(!name)return;const item=groups.get(name.toLowerCase())||{name,games:0,fouls:0,yellow:0,red:0,homeYellow:0,awayYellow:0,over35:0,over45:0,over55:0},hy=n(get(values,"HY","HomeYellow")),ay=n(get(values,"AY","AwayYellow")),hr=n(get(values,"HR","HomeRed")),ar=n(get(values,"AR","AwayRed")),cards=hy+ay+hr+ar;item.games++;item.fouls+=n(get(values,"HF","HomeFouls"))+n(get(values,"AF","AwayFouls"));item.yellow+=hy+ay;item.red+=hr+ar;item.homeYellow+=hy;item.awayYellow+=ay;if(cards>=4)item.over35++;if(cards>=5)item.over45++;if(cards>=6)item.over55++;groups.set(name.toLowerCase(),item)});preview=[...groups.values()].map(x=>({name:x.name,country:selectedLeague?.country||"",leagueId:refereeCsvLeagueId,games:x.games,foulsPerGame:x.games?x.fouls/x.games:0,yellowPerGame:x.games?x.yellow/x.games:0,redPerGame:x.games?x.red/x.games:0,homeYellow:x.games?x.homeYellow/x.games:0,awayYellow:x.games?x.awayYellow/x.games:0,over35:x.games?x.over35/x.games*100:0,over45:x.games?x.over45/x.games*100:0,over55:x.games?x.over55/x.games*100:0}))}else{preview=lines.slice(1).map(x=>row(x,delimiter)).map(values=>({name:get(values,"Name","Referee","Nome"),country:get(values,"Country","Pais","País")||selectedLeague?.country||"",leagueId:refereeCsvLeagueId,games:n(get(values,"Games","Matches","Jogos")),foulsPerGame:n(get(values,"FoulsPerGame","FoulsPG","FaltasJogo")),yellowPerGame:n(get(values,"YellowPerGame","YellowPG","AmarelosJogo")),redPerGame:n(get(values,"RedPerGame","RedPG","VermelhosJogo")),homeYellow:n(get(values,"HomeYellow","HomeYellowPG","AmarelosMandante")),awayYellow:n(get(values,"AwayYellow","AwayYellowPG","AmarelosVisitante")),over35:n(get(values,"Over35","O35")),over45:n(get(values,"Over45","O45")),over55:n(get(values,"Over55","O55"))})).filter(x=>x.name.trim().length>=3)}if(!preview.length)throw Error("Nenhum árbitro foi encontrado. Verifique a coluna Referee ou Name.");setRefereeCsvPreview(preview);setNotice(`✓ ${preview.length} árbitros encontrados. Confira a prévia antes de importar.`)}catch(e){setRefereeCsvPreview([]);setNotice(e instanceof Error?e.message:"CSV de árbitros inválido.")}};
+  const chooseRefereeCsv=(e:ChangeEvent<HTMLInputElement>)=>{const file=e.target.files?.[0];if(!file)return;setRefereeCsvName(file.name);const reader=new FileReader();reader.onload=()=>{setRefereeCsv(String(reader.result||""));setRefereeCsvPreview([])};reader.readAsText(file)};
+  const importRefereeCsv=async()=>{if(!refereeCsvPreview.length)return;setRefereeCsvLoading(true);try{const r=await fetch("/api/admin/referees",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({referees:refereeCsvPreview})}),d=await r.json();if(!r.ok)return setNotice(d.error||"Não foi possível importar os árbitros.");setNotice(`✓ ${d.total} árbitros importados: ${d.created} novos e ${d.updated} atualizados.`);setRefereeCsv("");setRefereeCsvName("");setRefereeCsvPreview([]);await load()}finally{setRefereeCsvLoading(false)}};
   const askAI = async (q = ask) => {
     q = q.trim();
     if (!q || loading) return;
@@ -780,6 +790,8 @@ export default function Home() {
                 E-mail ou usuário administrativo
                 <input
                   autoFocus
+                  name="username"
+                  autoComplete="username"
                   value={credentials.username}
                   onChange={(e) =>
                     setCredentials({ ...credentials, username: e.target.value })
@@ -791,6 +803,8 @@ export default function Home() {
                 Senha
                 <input
                   type="password"
+                  name="password"
+                  autoComplete="current-password"
                   value={credentials.password}
                   onChange={(e) =>
                     setCredentials({ ...credentials, password: e.target.value })
@@ -811,6 +825,8 @@ export default function Home() {
               <label>
                 Nome completo
                 <input
+                  name="name"
+                  autoComplete="name"
                   value={register.name}
                   onChange={(e) =>
                     setRegister({ ...register, name: e.target.value })
@@ -821,6 +837,8 @@ export default function Home() {
                 E-mail
                 <input
                   type="email"
+                  name="email"
+                  autoComplete="email"
                   value={register.email}
                   onChange={(e) =>
                     setRegister({ ...register, email: e.target.value })
@@ -831,6 +849,8 @@ export default function Home() {
                 Senha (mínimo 8 caracteres)
                 <input
                   type="password"
+                  name="new-password"
+                  autoComplete="new-password"
                   value={register.password}
                   onChange={(e) =>
                     setRegister({ ...register, password: e.target.value })
@@ -841,6 +861,8 @@ export default function Home() {
                 Confirmar senha
                 <input
                   type="password"
+                  name="confirm-password"
+                  autoComplete="new-password"
                   value={register.confirm}
                   onChange={(e) =>
                     setRegister({ ...register, confirm: e.target.value })
@@ -1483,6 +1505,15 @@ export default function Home() {
                 </div>
               </section>
               <section className="panel" id="referee-admin">
+                <div className="panel-head"><i className="green">⇧</i><div><h3>Importar árbitros por CSV</h3><p>Calcula automaticamente as estatísticas do Football-Data sem excluir o cadastro manual</p></div></div>
+                <div className="referee-csv-tools">
+                  <label>Liga associada<select value={refereeCsvLeagueId} onChange={e=>{setRefereeCsvLeagueId(e.target.value);setRefereeCsvPreview([])}}><option value="">Todas / sem liga específica</option>{leagues.map(l=><option key={l.id} value={l.id}>{l.country} — {l.name} ({l.season})</option>)}</select></label>
+                  <label className="drop referee-csv-drop"><input type="file" accept=".csv,.txt" onChange={chooseRefereeCsv}/><b>{refereeCsvName||"Selecionar CSV de árbitros ou partidas"}</b><span>Aceita Football-Data ou CSV resumido</span></label>
+                </div>
+                <textarea className="referee-csv-text" value={refereeCsv} onChange={e=>{setRefereeCsv(e.target.value);setRefereeCsvPreview([])}} placeholder="Ou cole aqui o CSV com Referee, HY, AY, HR, AR, HF e AF..."/>
+                <div className="actions"><button disabled={!refereeCsv} onClick={parseRefereeCsv}>Ler e conferir árbitros</button>{refereeCsvPreview.length>0&&<button className="primary" disabled={refereeCsvLoading} onClick={importRefereeCsv}>{refereeCsvLoading?"Importando...":`Importar ${refereeCsvPreview.length} árbitros`}</button>}<button onClick={()=>{setRefereeCsv("");setRefereeCsvName("");setRefereeCsvPreview([])}}>Limpar CSV</button></div>
+                {refereeCsvPreview.length>0&&<div className="referee-csv-preview"><div className="referee-csv-preview-head"><b>Prévia antes de salvar</b><span>{refereeCsvPreview.length} árbitros encontrados</span></div><div className="referee-preview-table"><div className="referee-preview-row head"><span>ÁRBITRO</span><span>JOGOS</span><span>FALTAS/J</span><span>AMARELOS/J</span><span>VERMELHOS/J</span><span>O3,5</span><span>O4,5</span><span>O5,5</span></div>{refereeCsvPreview.slice(0,50).map((r,i)=><div className="referee-preview-row" key={`${r.name}-${i}`}><b>{r.name}</b><span>{r.games}</span><span>{r.foulsPerGame.toFixed(2)}</span><span>{r.yellowPerGame.toFixed(2)}</span><span>{r.redPerGame.toFixed(2)}</span><span>{r.over35.toFixed(0)}%</span><span>{r.over45.toFixed(0)}%</span><span>{r.over55.toFixed(0)}%</span></div>)}</div>{refereeCsvPreview.length>50&&<small>Mostrando os primeiros 50 árbitros. Todos serão importados.</small>}</div>}
+                <div className="referee-import-divider"><span>OU CONTINUE CADASTRANDO MANUALMENTE</span></div>
                 <div className="panel-head"><i className="orange">⚖</i><div><h3>Cadastro manual de árbitros</h3><p>Cadastre ou atualize o histórico disciplinar usado nas projeções pré-jogo</p></div></div>
                 <div className="referee-admin-grid">
                   <label>Nome completo<input value={refereeForm.name} onChange={e=>setRefereeForm({...refereeForm,name:e.target.value})} placeholder="Ex.: Raphael Claus"/></label>
@@ -1599,6 +1630,8 @@ export default function Home() {
               Usuário
               <input
                 autoFocus
+                name="admin-username"
+                autoComplete="username"
                 value={credentials.username}
                 onChange={(e) =>
                   setCredentials({ ...credentials, username: e.target.value })
@@ -1609,6 +1642,8 @@ export default function Home() {
               Senha
               <input
                 type="password"
+                name="admin-password"
+                autoComplete="current-password"
                 value={credentials.password}
                 onChange={(e) =>
                   setCredentials({ ...credentials, password: e.target.value })

@@ -12,6 +12,8 @@
 - Classificação reposicionada junto ao confronto selecionado, com os dois times destacados.
 - Proteção contra respostas atrasadas que poderiam exibir a tabela de outra liga.
 - Em confrontos entre ligas diferentes, mostra somente a posição de cada equipe em sua própria competição.
+- Login compatível com o salvamento seguro de credenciais pelo navegador.
+- Importação de árbitros por CSV com prévia, cálculos automáticos e atualização sem duplicações.
 
 Aplicação Next.js pronta para Render Free, com PostgreSQL gratuito permanente no Neon, autenticação administrativa no servidor e análise estatística gratuita por IA via OpenRouter.
 
