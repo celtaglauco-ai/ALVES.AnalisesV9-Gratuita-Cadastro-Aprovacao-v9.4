@@ -8,7 +8,15 @@ const statusMap:Record<string,{short:string;long:string}>={IN_PLAY:{short:"LIVE"
 export async function GET(req:Request){
  if(!(await isAuthorized()))return NextResponse.json({error:"Faça login para acessar."},{status:401});
  const url=new URL(req.url),id=url.searchParams.get("id"),token=process.env.FOOTBALL_DATA_TOKEN;
- if(id)return NextResponse.json({available:true,statistics:[],limited:true,reason:"O plano gratuito da Football-Data.org fornece placar, classificação e partidas, mas não fornece estatísticas detalhadas ao vivo."});
+ if(id){
+  if(!token)return NextResponse.json({available:false,statistics:[],reason:"FOOTBALL_DATA_TOKEN não configurado."});
+  try{
+   const r=await fetch(`https://api.football-data.org/v4/matches/${encodeURIComponent(id)}`,{headers:{"X-Auth-Token":token},cache:"no-store"}),m=await r.json();
+   if(!r.ok)return NextResponse.json({available:false,statistics:[],reason:m?.message||"Partida indisponível na Football-Data.org."});
+   const st=statusMap[m.status]||{short:m.status,long:m.status};
+   return NextResponse.json({available:true,updatedAt:Date.now(),game:{provider:"football-data",id:m.id,date:m.utcDate,minute:0,status:st.short,statusLong:st.long,leagueId:m.competition?.id,league:m.competition?.name,country:m.area?.name,home:m.homeTeam?.name,away:m.awayTeam?.name,homeLogo:m.homeTeam?.crest,awayLogo:m.awayTeam?.crest,hg:m.score?.fullTime?.home??m.score?.halfTime?.home??0,ag:m.score?.fullTime?.away??m.score?.halfTime?.away??0},statistics:[],limited:true,reason:"O plano gratuito da Football-Data.org atualiza placar e status, mas não fornece estatísticas detalhadas ao vivo."});
+  }catch{return NextResponse.json({available:false,statistics:[],reason:"Não foi possível atualizar esta partida."});}
+ }
  if(!token)return NextResponse.json({available:false,games:[],reason:"FOOTBALL_DATA_TOKEN não configurado."});
  await initDb();
  const {rows}=await pool.query("SELECT id,name,code,country FROM leagues"),registered=rows.map(x=>({id:String(x.id),name:String(x.name),code:String(x.code||"").trim().toUpperCase(),country:String(x.country||"")}));
