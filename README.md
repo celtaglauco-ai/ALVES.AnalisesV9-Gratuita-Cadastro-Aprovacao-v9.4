@@ -1,5 +1,15 @@
 # ALVES.AnalisesV11 Profissional
 
+## Melhorias V11.3
+
+- Resumo rápido do confronto com tendência estatística principal.
+- Confiança geral calculada pela amostra e pela cobertura real das colunas.
+- Data e horário dos dados usados na análise.
+- Gráficos profissionais preservados e integrados ao novo resumo.
+- Histórico privado consultável, reabertura e exclusão por usuário.
+- Painel administrativo com ligas atualizadas, alertas e jogos ao vivo.
+- Contador lateral detalhado e navegação móvel aprimorada.
+
 Aplicação Next.js pronta para Render Free, com PostgreSQL gratuito permanente no Neon, autenticação administrativa no servidor e análise estatística gratuita por IA via OpenRouter.
 
 ## Segurança

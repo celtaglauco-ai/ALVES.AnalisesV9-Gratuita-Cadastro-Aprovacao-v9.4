@@ -26,3 +26,9 @@ export async function POST(req:Request){
   }
   return NextResponse.json({error:"Operação inválida."},{status:400});
 }
+export async function DELETE(req:Request){
+  const s=await getSession(); if(!s||s.role!=="user") return NextResponse.json({error:"Acesso de usuário obrigatório."},{status:401});
+  const id=new URL(req.url).searchParams.get("id")||""; if(!id)return NextResponse.json({error:"Análise não informada."},{status:400});
+  await initDb(); const result=await pool.query("DELETE FROM analysis_history WHERE id=$1 AND user_id=$2",[id,s.id]);
+  return NextResponse.json({ok:true,deleted:result.rowCount||0});
+}

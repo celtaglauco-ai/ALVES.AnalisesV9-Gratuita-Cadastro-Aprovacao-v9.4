@@ -19,6 +19,8 @@ type ApiLeagueOption={id:number|string;name:string;country:string;season:number;
 type ManualReferee={id:string;name:string;country:string;leagueId:string;games:number;foulsPerGame:number;yellowPerGame:number;redPerGame:number;homeYellow:number;awayYellow:number;over35:number;over45:number;over55:number;updatedAt:number};
 type PreChartMetric="goals"|"conceded"|"corners"|"cards"|"shots"|"onTarget";
 type LineSeries={name:string;color:string;values:number[];dashed?:boolean;icon?:string};
+type HistoryStats={games:number;goals:number;corners:number;cards:number;shots:number;onTarget:number;scored:number;conceded:number;xg:number;possession:number;over25:number;btts:number;overCorners:number;overCards:number};
+type AnalysisHistory={id:string;mode:"pre"|"live";league_id:string;home:string;away:string;snapshot:{awayLeagueId?:string;homeStats?:HistoryStats;awayStats?:HistoryStats;probabilities?:{goals:number;btts:number;corners:number;cards:number};live?:Record<string,number>|null};created_at:number};
 const emptyReferee={id:"",name:"",country:"",leagueId:"",games:0,foulsPerGame:0,yellowPerGame:0,redPerGame:0,homeYellow:0,awayYellow:0,over35:0,over45:0,over55:0};
 const codes: Record<string, [string, string]> = {
   E0: ["Inglaterra", "Premier League"],
@@ -224,6 +226,8 @@ export default function Home() {
     [apiLeagueOptions,setApiLeagueOptions]=useState<ApiLeagueOption[]>([]),
     [apiLeagueLoading,setApiLeagueLoading]=useState(false),
     [analyzed, setAnalyzed] = useState(false),
+    [analysisHistory,setAnalysisHistory]=useState<AnalysisHistory[]>([]),
+    [historyLoading,setHistoryLoading]=useState(false),
     [preChartMetric,setPreChartMetric]=useState<PreChartMetric>("goals"),
     [xrayLeagueId,setXrayLeagueId]=useState(""),
     [xrayTeam,setXrayTeam]=useState(""),
@@ -292,6 +296,7 @@ export default function Home() {
     const [r,rr]=await Promise.all([fetch("/api/leagues",{cache:"no-store"}),fetch("/api/referees",{cache:"no-store"})]),[d,rd]=await Promise.all([r.json(),rr.json()]);
     if(r.ok)setLeagues(d.leagues);if(rr.ok)setManualReferees(rd.referees||[]);
   };
+  const loadPrivateHistory=async()=>{if(admin)return;setHistoryLoading(true);try{const r=await fetch("/api/user/data",{cache:"no-store"}),d=await r.json();if(r.ok)setAnalysisHistory(d.history||[])}finally{setHistoryLoading(false)}};
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -303,6 +308,7 @@ export default function Home() {
       .finally(() => setAuthReady(true));
   }, []);
   useEffect(()=>{if(!authenticated||admin)return;const ping=()=>fetch("/api/auth/presence",{method:"POST"}).catch(()=>{});ping();const timer=setInterval(ping,45000);return()=>clearInterval(timer)},[authenticated,admin]);
+  useEffect(()=>{if(authenticated&&!admin)loadPrivateHistory()},[authenticated,admin]);
   const coveredLeagues=leagues.filter(x=>x.apiSync?.status==="updated");
   const league = leagues.find((x) => x.id === leagueId),
     awayLeague = leagues.find((x) => x.id === awayLeagueId),
@@ -507,7 +513,16 @@ export default function Home() {
     visibleLiveGames=liveApiGames.filter(g=>{
       const statusLive=["1H","2H","HT","ET","BT","P","LIVE"].includes(g.status),statusFinished=["FT","AET","PEN"].includes(g.status),statusOk=liveStatusFilter==="ALL"||(liveStatusFilter==="LIVE"&&statusLive)||(liveStatusFilter==="SCHEDULED"&&g.status==="NS")||(liveStatusFilter==="FINISHED"&&statusFinished),team=`${g.home} ${g.away}`.toLowerCase();
       return (liveCompetition==="ALL"||g.league===liveCompetition)&&statusOk&&team.includes(liveTeamFilter.toLowerCase())&&(!liveHistoryOnly||!!g.registeredLeagueId);
-    });
+    }),
+    qualitySignals=[league?.quality?.goals&&awayLeague?.quality?.goals,league?.quality?.corners&&awayLeague?.quality?.corners,league?.quality?.cards&&awayLeague?.quality?.cards,league?.quality?.shots&&awayLeague?.quality?.shots,league?.quality?.shotsOnTarget&&awayLeague?.quality?.shotsOnTarget].filter(Boolean).length,
+    preSample=(a?.games||0)+(b?.games||0),
+    preConfidence=Math.min(92,Math.round(34+Math.min(36,preSample*1.5)+qualitySignals*4.4)),
+    preConfidenceLabel=preConfidence>=78?"Alta":preConfidence>=60?"Média":"Baixa",
+    lastDataUpdate=Math.max(league?.updatedAt||0,awayLeague?.updatedAt||0,league?.apiSync?.updatedAt||0,awayLeague?.apiSync?.updatedAt||0),
+    strongestMarket=[{name:"Gols",value:prob.goals},{name:"Escanteios",value:prob.corners},{name:"Cartões",value:prob.cards}].sort((x,y)=>y.value-x.value)[0],
+    updatedLeagues=leagues.filter(l=>l.apiSync?.status==="updated").length,
+    problemLeagues=leagues.filter(l=>!!l.apiSync?.error).length,
+    todayLiveCount=liveApiGames.filter(g=>["1H","2H","HT","ET","BT","P","LIVE"].includes(g.status)).length;
   const checkFreeApi=async(force=false)=>{
     if(!league)return;
     setApiInfo("Consultando API gratuita...");
@@ -525,7 +540,9 @@ export default function Home() {
   useEffect(()=>{if(!selectedLiveGame)return;saveLiveSnapshot();const timer=setInterval(saveLiveSnapshot,5*60*1000);return()=>clearInterval(timer)},[selectedLiveId,live.minute,live.hg,live.ag,live.hc,live.ac,live.shotsHome,live.shotsAway,live.sotHome,live.sotAway,live.yellowHome,live.yellowAway,live.redHome,live.redAway]);
   const analyzeLiveGame=async(g:LiveApiGame)=>{const src=leagues.find(l=>l.id===g.registeredLeagueId),norm=(v:string)=>v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,""),findTeam=(name:string)=>src?[...new Set(src.games.flatMap(x=>[x.home,x.away]))].find(t=>norm(t).includes(norm(name))||norm(name).includes(norm(t))):undefined,homeName=findTeam(g.home),awayName=findTeam(g.away),recent=(team?:string)=>team&&src?src.games.filter(x=>x.home===team||x.away===team).slice(-5):[],hr=recent(homeName),ar=recent(awayName),teamGoals=(games:Game[],team?:string)=>avg(games.map(x=>x.home===team?x.hg:x.ag)),teamConceded=(games:Game[],team?:string)=>avg(games.map(x=>x.home===team?x.ag:x.hg)),historyText=hr.length||ar.length?`Histórico CSV: ${homeName||g.home} marcou média ${teamGoals(hr,homeName).toFixed(2)} e sofreu ${teamConceded(hr,homeName).toFixed(2)} nos últimos ${hr.length} jogos; ${awayName||g.away} marcou ${teamGoals(ar,awayName).toFixed(2)} e sofreu ${teamConceded(ar,awayName).toFixed(2)} nos últimos ${ar.length}.`:`Não existe histórico CSV compatível para este confronto.`,localAnalysis=`ANÁLISE ESTATÍSTICA DISPONÍVEL\n${g.home} ${g.hg} × ${g.ag} ${g.away}\nSituação informada: ${g.statusLong}${g.minute?` aos ${g.minute} minutos`:""}.\n${historyText}\nLeitura: ${g.hg===g.ag?"o placar está equilibrado":g.hg>g.ag?`${g.home} aparece em vantagem`:`${g.away} aparece em vantagem`}. Sem chutes, escanteios ou cartões confirmados, não é seguro indicar pressão nem projetar esses mercados.`;setSelectedLiveId(g.id);setLiveAiAnalysis(localAnalysis);setLiveApiLoading(true);try{const statsResponse=await fetch(`/api/live?id=${g.id}&provider=${g.provider}`,{cache:"no-store"}),statsData=await statsResponse.json(),teams=statsData.statistics||[],values=(index:number)=>Object.fromEntries((teams[index]?.statistics||[]).map((x:{type:string;value:string|number|null})=>[x.type,x.value])),h=values(0),aStats=values(1),val=(o:Record<string,unknown>,k:string)=>n(String(o[k]??0).replace("%","")),snapshot={minute:g.minute||0,hg:g.hg,ag:g.ag,hc:val(h,"Corner Kicks"),ac:val(aStats,"Corner Kicks"),shotsHome:val(h,"Total Shots"),shotsAway:val(aStats,"Total Shots"),sotHome:val(h,"Shots on Goal"),sotAway:val(aStats,"Shots on Goal"),yellowHome:val(h,"Yellow Cards"),yellowAway:val(aStats,"Yellow Cards"),redHome:val(h,"Red Cards"),redAway:val(aStats,"Red Cards"),possessionHome:val(h,"Ball Possession"),possessionAway:val(aStats,"Ball Possession"),savesHome:val(h,"Goalkeeper Saves"),savesAway:val(aStats,"Goalkeeper Saves")};setLive(x=>({...x,...snapshot,shots:snapshot.shotsHome+snapshot.shotsAway,sot:snapshot.sotHome+snapshot.sotAway,yellow:snapshot.yellowHome+snapshot.yellowAway,red:snapshot.redHome+snapshot.redAway}));if(g.registeredLeagueId){setLeagueId(g.registeredLeagueId);setAwayLeagueId(g.registeredLeagueId)}setHome(homeName||g.home);setAway(awayName||g.away);setLiveApiInfo(`${g.home} × ${g.away}: ${statsData.limited?"placar e histórico carregados; detalhes ao vivo não existem no plano gratuito.":"estatísticas carregadas."}`);const aiResponse=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"Faça uma análise objetiva usando somente os dados fornecidos e o histórico. Não invente estatísticas ausentes. Mostre cenário, tendência de gols e limitações.",history:[],context:{mode:"live",provider:g.provider,league:g.league,country:g.country,home:g.home,away:g.away,status:g.statusLong,history:{home:hr,away:ar},dataLimitation:statsData.limited?statsData.reason:null,live:snapshot}})}),aiData=await aiResponse.json();if(aiResponse.ok&&aiData.answer)setLiveAiAnalysis(`${localAnalysis}\n\nANÁLISE COMPLEMENTAR DA IA\n${aiData.answer}`);else setLiveAiAnalysis(`${localAnalysis}\n\nA IA externa está indisponível agora; a análise estatística local acima continua válida.`)}catch{setLiveAiAnalysis(`${localAnalysis}\n\nNão foi possível consultar a IA externa; a análise estatística local acima continua disponível.`)}finally{setLiveApiLoading(false)}};
   useEffect(()=>{if(tab==="live"&&authenticated&&leagues.length&&!liveAutoLoaded){setLiveAutoLoaded(true);fetchLiveGames()}},[tab,authenticated,leagues.length,liveAutoLoaded]);
-  const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});setNotice("Análise salva somente no seu histórico privado.")};
+  const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{awayLeagueId,homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});await loadPrivateHistory();setNotice("Análise salva somente no seu histórico privado.")};
+  const reopenHistory=(item:AnalysisHistory)=>{setLeagueId(item.league_id);setAwayLeagueId(item.snapshot?.awayLeagueId||item.league_id);setTab(item.mode==="live"?"live":"pre");setTimeout(()=>{setHome(item.home);setAway(item.away);setAnalyzed(true)},0);setNotice(`Histórico de ${item.home} × ${item.away} reaberto.`)};
+  const deleteHistory=async(id:string)=>{const r=await fetch(`/api/user/data?id=${encodeURIComponent(id)}`,{method:"DELETE"});if(r.ok){setAnalysisHistory(x=>x.filter(item=>item.id!==id));setNotice("Análise removida do seu histórico.")}};
   useEffect(()=>{setApiStandings({});setApiGames([]);setTeamSearch("");setApiChecked(false);setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi()},[leagueId]);
   useEffect(()=>{if(!authenticated||!leagueId)return;const timer=setInterval(checkFreeApi,15*60*1000);return()=>clearInterval(timer)},[authenticated,leagueId]);
   const doLogin = async () => {
@@ -892,7 +909,8 @@ export default function Home() {
           <div className="db-card">
             <b>Competições</b>
             <strong>{leagues.length}</strong>
-            <span>disponíveis para análise</span>
+            <span>{updatedLeagues} atualizadas • {todayLiveCount} ao vivo</span>
+            <small>{problemLeagues?`${problemLeagues} precisam de atenção`:"Cobertura sem alertas"}</small>
           </div>
           <footer>
             <button
@@ -1134,6 +1152,12 @@ export default function Home() {
                 </div>
                 <section className="comparison-panel">
                   <div className="comparison-title"><div><h3>Comparativo pré-jogo</h3><span>Casa como mandante × visitante como visitante</span></div>{!admin&&<button onClick={()=>savePrivateHistory(tab==="live"?"live":"pre")}>Salvar no meu histórico</button>}</div>
+                  <div className="analysis-summary">
+                    <article className="summary-confidence"><small>CONFIANÇA DA ANÁLISE</small><strong>{preConfidence}%</strong><b>{preConfidenceLabel}</b><span>{preSample} partidas consideradas</span></article>
+                    <article><small>TENDÊNCIA MAIS FORTE</small><strong>{strongestMarket.name}</strong><b>{strongestMarket.value.toFixed(0)}%</b><span>Maior sinal estatístico do confronto</span></article>
+                    <article><small>LEITURA RÁPIDA</small><strong>{a!.scored>b!.scored*1.15?home:b!.scored>a!.scored*1.15?away:"Confronto equilibrado"}</strong><b>{prob.goals>=70?"Cenário aberto":prob.goals>=55?"Cenário moderado":"Cenário cauteloso"}</b><span>Baseado em mando e forma recente</span></article>
+                    <article><small>DADOS UTILIZADOS</small><strong>{qualitySignals}/5 grupos</strong><b>{lastDataUpdate?new Date(lastDataUpdate).toLocaleDateString("pt-BR"):"Sem data"}</b><span>{lastDataUpdate?`Atualizados às ${new Date(lastDataUpdate).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`:"Aguardando atualização"}</span></article>
+                  </div>
                   <div className="team-form-grid">
                     <article><small>{home} • posição em casa</small><strong>#{homeVenueTable.findIndex(x=>x.team===home)+1}</strong><Form values={homeStanding?.form||[]}/></article>
                     <article><small>{away} • posição fora</small><strong>#{awayVenueTable.findIndex(x=>x.team===away)+1}</strong><Form values={awayStanding?.form||[]}/></article>
@@ -1160,6 +1184,7 @@ export default function Home() {
                     <footer><span>← mais antigo</span><b>Passe o mouse sobre os pontos para ver os valores</b><span>mais recente →</span></footer>
                   </div>
                 </section>
+                {!admin&&<section className="panel private-history-panel"><div className="panel-head"><i className="purple">◷</i><div><h3>Meu histórico de análises</h3><p>Privado e separado dos demais usuários</p></div><button onClick={loadPrivateHistory} disabled={historyLoading}>{historyLoading?"Atualizando...":"Atualizar"}</button></div><div className="private-history-list">{analysisHistory.slice(0,12).map(item=><article key={item.id}><span><small>{item.mode==="live"?"AO VIVO":"PRÉ-JOGO"}</small><b>{item.home} × {item.away}</b><time>{new Date(Number(item.created_at)).toLocaleString("pt-BR")}</time></span><div><button onClick={()=>reopenHistory(item)}>Abrir</button><button className="danger" onClick={()=>deleteHistory(item.id)}>Excluir</button></div></article>)}{!analysisHistory.length&&<p className="nodata">Você ainda não salvou nenhuma análise.</p>}</div></section>}
                 {h2h.length>0&&<section className="panel compact-panel"><div className="panel-head"><i className="blue">↔</i><div><h3>Últimos confrontos diretos</h3><p>Resultados encontrados na liga selecionada</p></div></div><div className="h2h-list">{h2h.map((g,i)=><div key={i}><small>{g.date||g.round||`Jogo ${i+1}`}</small><b>{g.home} {g.hg} × {g.ag} {g.away}</b></div>)}</div></section>}
                 <section className="panel compact-panel referee-panel">
                   <div className="panel-head"><i className="orange">▰</i><div><h3>Análise completa da arbitragem</h3><p>Histórico disciplinar, faltas, linhas de cartões e perfil de rigor</p></div></div>
@@ -1324,6 +1349,9 @@ export default function Home() {
                   <b>Privado</b>
                   <small>somente aprovados</small>
                 </article>
+                <article><span>Atualizadas</span><b>{updatedLeagues}</b><small>com sincronização confirmada</small></article>
+                <article><span>Com atenção</span><b>{problemLeagues}</b><small>erro ou sem cobertura</small></article>
+                <article><span>Jogos ao vivo</span><b>{todayLiveCount}</b><small>detectados na consulta atual</small></article>
               </div>
               <section className="panel api-control-panel"><div className="panel-head"><i className="green">↻</i><div><h3>Atualização automática e cobertura</h3><p>Classificações e partidas encerradas da temporada cadastrada</p></div><button disabled={syncLoading} onClick={syncAll}>{syncLoading?"Atualizando...":"Atualizar todas agora"}</button></div><div className="api-status-list">{leagues.map(l=><article key={l.id}><span><b>{l.name}</b><small>{l.country} • {l.season}{l.apiSync?.round?` • ${l.apiSync.round}`:""}</small></span><em className={l.apiSync?.status==="updated"?"api-ok":"api-off"}>{l.apiSync?.status==="updated"?"● Atualizada":l.apiSync?.error?"● Erro / sem cobertura":"● Aguardando primeira atualização"}</em><span><b>{l.apiSync?.games.length||0}</b><small>jogos automáticos</small></span><span><small>{l.apiSync?.updatedAt?new Date(l.apiSync.updatedAt).toLocaleString("pt-BR"):"Nunca atualizada"}</small>{l.apiSync?.error&&<small title={l.apiSync.error}>{l.apiSync.error}</small>}</span></article>)}</div></section>
               <UserAdmin />
