@@ -1,5 +1,5 @@
 "use client";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { DataQuality, Game, League } from "@/lib/types";
 type Tab = "pre" | "standings" | "live" | "ai" | "admin";
 type Msg = { role: "user" | "assistant"; content: string };
@@ -189,6 +189,8 @@ function TrendLineChart({series,labels}:{series:LineSeries[];labels:string[]}) {
   </div>;
 }
 export default function Home() {
+  const standingsRequest=useRef(0);
+  const awayStandingsRequest=useRef(0);
   const [tab, setTab] = useState<Tab>("pre"),
     [leagues, setLeagues] = useState<League[]>([]),
     [manualReferees,setManualReferees]=useState<ManualReferee[]>([]),
@@ -238,6 +240,8 @@ export default function Home() {
     [selectedReferee, setSelectedReferee] = useState(""),
     [apiInfo, setApiInfo] = useState("Selecione uma liga para consultar a temporada atual na API"),
     [apiStandings, setApiStandings] = useState<Partial<Record<TableMode,StandingRow[]>>>({}),
+    [awayApiStandings,setAwayApiStandings]=useState<Partial<Record<TableMode,StandingRow[]>>>({}),
+    [awayApiInfo,setAwayApiInfo]=useState(""),
     [apiGames,setApiGames]=useState<Game[]>([]),
     [apiMeta,setApiMeta]=useState({updatedAt:0,round:"",remaining:null as number|null,stale:false}),
     [syncLoading,setSyncLoading]=useState(false),
@@ -523,12 +527,15 @@ export default function Home() {
     updatedLeagues=leagues.filter(l=>l.apiSync?.status==="updated").length,
     problemLeagues=leagues.filter(l=>!!l.apiSync?.error).length,
     todayLiveCount=liveApiGames.filter(g=>["1H","2H","HT","ET","BT","P","LIVE"].includes(g.status)).length;
-  const checkFreeApi=async(force=false)=>{
-    if(!league)return;
+  const checkFreeApi=async(force=false,targetId=leagueId)=>{
+    const targetLeague=leagues.find(l=>l.id===targetId);if(!targetLeague)return;
+    const request=++standingsRequest.current;
     setApiInfo("Consultando API gratuita...");
-    const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(league.id)}${force?"&refresh=1":""}`,{cache:"no-store"}),d=await r.json();
-    if(d.available){setApiStandings(d.tables||{});setApiGames(d.games||[]);setApiMeta({updatedAt:d.updatedAt||0,round:d.currentRound||"",remaining:d.remaining??null,stale:!!d.stale});setApiInfo(`${d.league?.name||league.name} • temporada ${d.league?.season}${d.currentRound?` • ${d.currentRound}`:""} • ${d.stale?"última atualização válida":"atualizada"} em ${new Date(d.updatedAt).toLocaleString("pt-BR")}${d.remaining!=null?` • cota restante: ${d.remaining}`:""}${d.warning?` • ${d.warning}`:""}`)}else{setApiStandings({});setApiGames([]);setApiMeta({updatedAt:0,round:"",remaining:null,stale:false});setApiInfo(d.reason||"Sem cobertura confirmada para a temporada atual.")}setApiChecked(true)
+    const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(targetId)}${force?"&refresh=1":""}`,{cache:"no-store"}),d=await r.json();
+    if(request!==standingsRequest.current)return;
+    if(d.available){setApiStandings(d.tables||{});setApiGames(d.games||[]);setApiMeta({updatedAt:d.updatedAt||0,round:d.currentRound||"",remaining:d.remaining??null,stale:!!d.stale});setApiInfo(`${d.league?.name||targetLeague.name} • temporada ${d.league?.season||targetLeague.season}${d.currentRound?` • ${d.currentRound}`:""} • ${d.stale?"última atualização válida":"atualizada"} em ${new Date(d.updatedAt).toLocaleString("pt-BR")}${d.remaining!=null?` • cota restante: ${d.remaining}`:""}${d.warning?` • ${d.warning}`:""}`)}else{setApiStandings({});setApiGames([]);setApiMeta({updatedAt:0,round:"",remaining:null,stale:false});setApiInfo(d.reason||"Sem cobertura confirmada para a temporada atual.")}setApiChecked(true)
   };
+  const checkAwayFreeApi=async(targetId=awayLeagueId)=>{const targetLeague=leagues.find(l=>l.id===targetId);if(!targetLeague)return;const request=++awayStandingsRequest.current;setAwayApiInfo("Consultando classificação...");try{const r=await fetch(`/api/standings?leagueId=${encodeURIComponent(targetId)}`,{cache:"no-store"}),d=await r.json();if(request!==awayStandingsRequest.current)return;if(d.available){setAwayApiStandings(d.tables||{});setAwayApiInfo(`${targetLeague.name} • atualizado em ${new Date(d.updatedAt).toLocaleString("pt-BR")}`)}else{setAwayApiStandings({});setAwayApiInfo(d.reason||"Classificação indisponível.")}}catch{if(request===awayStandingsRequest.current){setAwayApiStandings({});setAwayApiInfo("Não foi possível consultar esta classificação.")}}};
   const clearPreAnalysis=()=>{setHome("");setAway("");setAnalyzed(false);setNotice("")};
   const clearStandingTeam=()=>setTeamSearch("");
   const clearAi=()=>{setAsk("");setChat([{role:"assistant",content:"Selecione uma partida e pergunte sobre gols, escanteios, cartões, finalizações ou tendências estatísticas."}])};
@@ -543,7 +550,8 @@ export default function Home() {
   const savePrivateHistory=async(mode:"pre"|"live")=>{if(admin||!ready)return;await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode,leagueId,home,away,snapshot:{awayLeagueId,homeStats:a,awayStats:b,probabilities:prob,live:mode==="live"?live:null}})});await loadPrivateHistory();setNotice("Análise salva somente no seu histórico privado.")};
   const reopenHistory=(item:AnalysisHistory)=>{setLeagueId(item.league_id);setAwayLeagueId(item.snapshot?.awayLeagueId||item.league_id);setTab(item.mode==="live"?"live":"pre");setTimeout(()=>{setHome(item.home);setAway(item.away);setAnalyzed(true)},0);setNotice(`Histórico de ${item.home} × ${item.away} reaberto.`)};
   const deleteHistory=async(id:string)=>{const r=await fetch(`/api/user/data?id=${encodeURIComponent(id)}`,{method:"DELETE"});if(r.ok){setAnalysisHistory(x=>x.filter(item=>item.id!==id));setNotice("Análise removida do seu histórico.")}};
-  useEffect(()=>{setApiStandings({});setApiGames([]);setTeamSearch("");setApiChecked(false);setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi()},[leagueId]);
+  useEffect(()=>{standingsRequest.current++;setApiStandings({});setApiGames([]);setTeamSearch("");setApiChecked(false);setApiInfo("Consultando a temporada atual na API...");if(leagueId)checkFreeApi(false,leagueId)},[leagueId]);
+  useEffect(()=>{awayStandingsRequest.current++;setAwayApiStandings({});setAwayApiInfo("");if(awayLeagueId&&awayLeagueId!==leagueId)checkAwayFreeApi(awayLeagueId)},[awayLeagueId,leagueId]);
   useEffect(()=>{if(!authenticated||!leagueId)return;const timer=setInterval(checkFreeApi,15*60*1000);return()=>clearInterval(timer)},[authenticated,leagueId]);
   const doLogin = async () => {
     const r = await fetch("/api/auth/login", {
@@ -993,28 +1001,6 @@ export default function Home() {
               </section>}
             </>
           )}
-          {tab === "pre" && league && (!apiChecked || standings.length>0) && (
-            <section className="panel standings-panel">
-              <div className="standings-head">
-                <div><h3>🏆 Classificação</h3><p>{apiInfo}</p></div>
-                <div className="standings-tools">
-                  <input value={teamSearch} onChange={e=>setTeamSearch(e.target.value)} placeholder="Buscar time..." />
-                  {teamSearch&&<button onClick={clearStandingTeam}>× Limpar</button>}
-                  <button onClick={()=>checkFreeApi(true)}>↻ Atualizar Football-Data.org</button>
-                </div>
-              </div>
-              <div className="standing-tabs">
-                {(["TOTAL","HOME","AWAY"] as TableMode[]).map(m=><button key={m} className={tableMode===m?"selected":""} onClick={()=>setTableMode(m)}>{m==="TOTAL"?"GERAL":m==="HOME"?"MANDANTE":"VISITANTE"}</button>)}
-              </div>
-              <div className="standing-table">
-                <div className="standing-row standing-th"><span>#</span><span>TIME</span><span>P</span><span>J</span><span>V</span><span>E</span><span>D</span><span>GP</span><span>GC</span><span>SG</span><span>FORMA</span></div>
-                {visibleStandings.map(r=><div className="standing-row" key={r.team}>
-                  <span className="position">{standings.findIndex(x=>x.team===r.team)+1}</span><b>{r.team}</b><strong>{r.p}</strong><span>{r.j}</span><span>{r.v}</span><span>{r.e}</span><span>{r.d}</span><span>{r.gp}</span><span>{r.gc}</span><span className={r.sg>=0?"positive":"negative"}>{r.sg>0?"+":""}{r.sg}</span><Form values={r.form}/>
-                </div>)}
-                {!visibleStandings.length&&<div className="api-standing-empty">Aguardando a classificação atual da API. Os resultados do CSV não são usados nesta tabela.</div>}
-              </div>
-            </section>
-          )}
           {tab === "live" && (
             <>
             <section className="panel live-api-panel">
@@ -1150,6 +1136,16 @@ export default function Home() {
                     <b>{away}</b>
                   </div>
                 </div>
+                {tab==="pre"&&leagueId===awayLeagueId&&<section className="panel standings-panel match-standings-panel">
+                  <div className="standings-head">
+                    <div><small>CLASSIFICAÇÃO DA PARTIDA SELECIONADA</small><h3>🏆 {league.name} — {home} × {away}</h3><p>{apiInfo}</p></div>
+                    <div className="standings-tools"><input value={teamSearch} onChange={e=>setTeamSearch(e.target.value)} placeholder="Buscar time nesta liga..."/>{teamSearch&&<button onClick={clearStandingTeam}>× Limpar</button>}<button disabled={apiInfo.includes("Consultando")} onClick={()=>checkFreeApi(true,league.id)}>↻ Atualizar classificação</button></div>
+                  </div>
+                  <div className="standing-tabs">{(["TOTAL","HOME","AWAY"] as TableMode[]).map(m=><button key={m} className={tableMode===m?"selected":""} onClick={()=>setTableMode(m)}>{m==="TOTAL"?"GERAL":m==="HOME"?"MANDANTE":"VISITANTE"}</button>)}</div>
+                  <div className="selected-team-positions"><article><small>{home}</small><strong>{standings.findIndex(r=>r.team===home)>=0?`#${standings.findIndex(r=>r.team===home)+1}`:"—"}</strong><span>{tableMode==="TOTAL"?"posição geral":tableMode==="HOME"?"posição como mandante":"posição como visitante"}</span></article><article><small>{away}</small><strong>{standings.findIndex(r=>r.team===away)>=0?`#${standings.findIndex(r=>r.team===away)+1}`:"—"}</strong><span>{tableMode==="TOTAL"?"posição geral":tableMode==="HOME"?"posição como mandante":"posição como visitante"}</span></article></div>
+                  <div className="standing-table"><div className="standing-row standing-th"><span>#</span><span>TIME</span><span>P</span><span>J</span><span>V</span><span>E</span><span>D</span><span>GP</span><span>GC</span><span>SG</span><span>FORMA</span></div>{visibleStandings.map(r=><div className={`standing-row ${r.team===home||r.team===away?"selected-match-team":""}`} key={r.team}><span className="position">{standings.findIndex(x=>x.team===r.team)+1}</span><b>{r.team}{r.team===home?" • CASA":r.team===away?" • FORA":""}</b><strong>{r.p}</strong><span>{r.j}</span><span>{r.v}</span><span>{r.e}</span><span>{r.d}</span><span>{r.gp}</span><span>{r.gc}</span><span className={r.sg>=0?"positive":"negative"}>{r.sg>0?"+":""}{r.sg}</span><Form values={r.form}/></div>)}{!visibleStandings.length&&<div className="api-standing-empty">{apiChecked?`Não foi encontrada uma classificação atual para ${league.name}.`:"Carregando a classificação correta da liga selecionada..."}</div>}</div>
+                </section>}
+                {tab==="pre"&&leagueId!==awayLeagueId&&<section className="panel cross-league-positions"><div className="panel-head"><i className="orange">🏆</i><div><h3>Posição de cada time em sua liga</h3><p>As competições são diferentes; por isso as classificações não são misturadas.</p></div></div><div className="own-league-position-grid"><article><small>MANDANTE • {league.name}</small><h3>{home}</h3><strong>{(apiStandings.TOTAL||[]).findIndex(r=>r.team===home)>=0?`#${(apiStandings.TOTAL||[]).findIndex(r=>r.team===home)+1}`:"—"}</strong><span>{apiInfo}</span></article><article><small>VISITANTE • {awayLeague?.name}</small><h3>{away}</h3><strong>{(awayApiStandings.TOTAL||[]).findIndex(r=>r.team===away)>=0?`#${(awayApiStandings.TOTAL||[]).findIndex(r=>r.team===away)+1}`:"—"}</strong><span>{awayApiInfo||"Consultando classificação da liga do visitante..."}</span></article></div><footer>Cada posição é consultada separadamente na classificação geral da competição correspondente.</footer></section>}
                 <section className="comparison-panel">
                   <div className="comparison-title"><div><h3>Comparativo pré-jogo</h3><span>Casa como mandante × visitante como visitante</span></div>{!admin&&<button onClick={()=>savePrivateHistory(tab==="live"?"live":"pre")}>Salvar no meu histórico</button>}</div>
                   <div className="analysis-summary">

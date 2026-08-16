@@ -9,6 +9,9 @@
 - Histórico privado consultável, reabertura e exclusão por usuário.
 - Painel administrativo com ligas atualizadas, alertas e jogos ao vivo.
 - Contador lateral detalhado e navegação móvel aprimorada.
+- Classificação reposicionada junto ao confronto selecionado, com os dois times destacados.
+- Proteção contra respostas atrasadas que poderiam exibir a tabela de outra liga.
+- Em confrontos entre ligas diferentes, mostra somente a posição de cada equipe em sua própria competição.
 
 Aplicação Next.js pronta para Render Free, com PostgreSQL gratuito permanente no Neon, autenticação administrativa no servidor e análise estatística gratuita por IA via OpenRouter.
 
