@@ -8,9 +8,10 @@ export async function GET() {
   await initDb();
   const [profile,history]=await Promise.all([
     pool.query("SELECT settings,updated_at FROM user_profiles WHERE user_id=$1",[s.id]),
-    pool.query("SELECT id,mode,league_id,home,away,snapshot,created_at FROM analysis_history WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50",[s.id]),
+    pool.query("SELECT id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status,result_note,resolved_at FROM analysis_history WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[s.id]),
   ]);
-  return NextResponse.json({settings:profile.rows[0]?.settings||{},history:history.rows});
+  const items=history.rows,total=items.length,hits=items.filter(x=>x.result_status==='hit').length,misses=items.filter(x=>x.result_status==='miss').length,pending=items.filter(x=>x.result_status==='pending').length,resolved=hits+misses;
+  return NextResponse.json({settings:profile.rows[0]?.settings||{},history:items,performance:{total,hits,misses,pending,accuracy:resolved?Math.round(hits/resolved*100):0}});
 }
 export async function POST(req:Request){
   const s=await getSession(); if(!s||s.role!=="user") return NextResponse.json({error:"Acesso de usuário obrigatório."},{status:401});
@@ -21,7 +22,8 @@ export async function POST(req:Request){
   }
   if(b.type==="history"){
     const home=String(b.home||"").slice(0,100),away=String(b.away||"").slice(0,100); if(!home||!away)return NextResponse.json({error:"Times ausentes."},{status:400});
-    await pool.query("INSERT INTO analysis_history(id,user_id,mode,league_id,home,away,snapshot,created_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8)",[crypto.randomUUID(),s.id,String(b.mode||"pre").slice(0,20),String(b.leagueId||"").slice(0,100),home,away,JSON.stringify(b.snapshot||{}),Date.now()]);
+    const probabilities=b.snapshot?.probabilities||{},markets=[{name:"Gols",value:Number(probabilities.goals||0)},{name:"Escanteios",value:Number(probabilities.corners||0)},{name:"Cartões",value:Number(probabilities.cards||0)}].sort((a,c)=>c.value-a.value),primary=markets[0]||{name:"Análise geral",value:0};
+    await pool.query("INSERT INTO analysis_history(id,user_id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,'pending')",[crypto.randomUUID(),s.id,String(b.mode||"pre").slice(0,20),String(b.leagueId||"").slice(0,100),home,away,JSON.stringify(b.snapshot||{}),Date.now(),primary.name,Math.max(0,Math.min(100,Number(b.confidence||primary.value||0)))]);
     return NextResponse.json({ok:true});
   }
   return NextResponse.json({error:"Operação inválida."},{status:400});

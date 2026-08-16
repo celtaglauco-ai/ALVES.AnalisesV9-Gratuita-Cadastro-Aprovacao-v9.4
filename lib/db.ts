@@ -40,8 +40,15 @@ export function initDb() {
  CREATE TABLE IF NOT EXISTS analysis_history (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   mode TEXT NOT NULL, league_id TEXT, home TEXT NOT NULL, away TEXT NOT NULL,
-  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at BIGINT NOT NULL
+  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at BIGINT NOT NULL,
+  market TEXT NOT NULL DEFAULT '', confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+  result_status TEXT NOT NULL DEFAULT 'pending', result_note TEXT NOT NULL DEFAULT '', resolved_at BIGINT NOT NULL DEFAULT 0
  );
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT '';
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION NOT NULL DEFAULT 0;
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS result_status TEXT NOT NULL DEFAULT 'pending';
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS result_note TEXT NOT NULL DEFAULT '';
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS resolved_at BIGINT NOT NULL DEFAULT 0;
  CREATE TABLE IF NOT EXISTS referees (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT '', league_id TEXT NOT NULL DEFAULT '',
   games INTEGER NOT NULL DEFAULT 0, fouls_per_game DOUBLE PRECISION NOT NULL DEFAULT 0,
