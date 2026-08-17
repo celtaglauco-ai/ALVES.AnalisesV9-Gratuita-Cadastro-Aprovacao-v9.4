@@ -61,7 +61,7 @@ O plano grátis da Football-Data.org limita a quantidade de competições e requ
 
 A nova aba **Bot Pré-Live** monta uma combinação de dois mercados — mais de 1,5 gols e mais de 7,5 escanteios — usando o histórico CSV da competição, recorte mandante/visitante e amostra mínima de cinco jogos por equipe.
 
-- A odd total é informada pelo usuário e nunca pode ultrapassar 1,80.
+- O sistema exibe apenas o lembrete de faixa recomendada entre 1,62 e 1,80; não existe campo de odd configurada.
 - A entrada só é aprovada quando os dois mercados alcançam ao menos 65% na amostra.
 - Sem escanteios no CSV, sem amostra ou fora do limite, o bot rejeita a entrada.
 - O botão **Copiar entrada** prepara o texto; **Abrir Bet365** abre o site em outra aba. A seleção deve ser confirmada manualmente.

@@ -242,7 +242,6 @@ export default function Home() {
     [personalPerformance,setPersonalPerformance]=useState<PersonalPerformance>({total:0,hits:0,misses:0,pending:0,accuracy:0}),
     [historyLoading,setHistoryLoading]=useState(false),
     [preChartMetric,setPreChartMetric]=useState<PreChartMetric>("goals"),
-    [preBotOdd,setPreBotOdd]=useState(""),
     [preBotResult,setPreBotResult]=useState<PreBotResult|null>(null),
     [xrayLeagueId,setXrayLeagueId]=useState(""),
     [xrayTeam,setXrayTeam]=useState(""),
@@ -470,7 +469,7 @@ export default function Home() {
       ),
     );
   const analyzePreBot=()=>{
-    const odd=n(preBotOdd),sameLeague=!!leagueId&&leagueId===awayLeagueId,
+    const sameLeague=!!leagueId&&leagueId===awayLeagueId,
       cornersAvailable=!!(league?.quality?.corners&&awayLeague?.quality?.corners),
       goalsChance=ready?(a!.over15+b!.over15)/2:0,
       cornersChance=ready&&cornersAvailable?(a!.over75Corners+b!.over75Corners)/2:0,
@@ -481,13 +480,11 @@ export default function Home() {
     const selected=markets.slice(0,2),confidence=Math.round(selected.length===2?(goalsChance+cornersChance)/2:selected.length?goalsChance:0),reasons:string[]=[];
     if(!sameLeague)reasons.push("Selecione os dois times da mesma competição.");
     if(!enoughSample)reasons.push("São necessários pelo menos 5 jogos de cada equipe na condição casa/fora.");
-    if(!odd||odd<1.01)reasons.push("Informe a odd total atual da combinação.");
-    if(odd>1.8)reasons.push("A odd total está acima do limite de 1,80.");
     if(selected.length<2)reasons.push(cornersAvailable?"Os dois mercados não atingiram juntos o mínimo estatístico de 65%.":"O CSV desta competição não possui escanteios suficientes para montar a combinação.");
     const approved=!reasons.length&&selected.length===2;
     setPreBotResult({approved,markets:selected,confidence,risk:confidence>=78?"Baixo":confidence>=70?"Médio":"Alto",evidence:[`${goalsChance.toFixed(0)}% da amostra sustenta +1,5 gols`,cornersAvailable?`${cornersChance.toFixed(0)}% da amostra sustenta +7,5 escanteios`:"Escanteios indisponíveis no CSV",`${a?.games||0} jogos do mandante e ${b?.games||0} do visitante analisados`],reason:approved?"Os dois mercados passaram pelos filtros de amostra, tendência e odd máxima.":reasons.join(" ")});
   };
-  const copyPreBot=async()=>{if(!preBotResult?.approved)return;const text=`${home} × ${away}\n${preBotResult.markets.join(" + ")}\nOdd total: ${Number(preBotOdd).toFixed(2).replace(".",",")}\nConfiança estatística: ${preBotResult.confidence}%`;try{await navigator.clipboard.writeText(text);setNotice("Entrada copiada. Confira as seleções e a odd na casa de apostas.")}catch{setNotice(text)}};
+  const copyPreBot=async()=>{if(!preBotResult?.approved)return;const text=`${home} × ${away}\n${preBotResult.markets.join(" + ")}\nOdd recomendada: de 1,62 a 1,80\nConfiança estatística: ${preBotResult.confidence}%`;try{await navigator.clipboard.writeText(text);setNotice("Entrada copiada. Confira as seleções e a odd na casa de apostas.")}catch{setNotice(text)}};
   const standings=apiStandings[tableMode]||[],
     visibleStandings=standings.filter(x=>x.team.toLowerCase().includes(teamSearch.toLowerCase())),
     selectedStandingTeam=standings.find(x=>x.team.toLowerCase()===teamSearch.trim().toLowerCase())?.team||"",
@@ -1019,7 +1016,7 @@ export default function Home() {
                     {tab === "standings"
                       ? "Selecione uma competição para acompanhar sua tabela oficial atualizada."
                       : tab === "prebot"
-                      ? "Monte uma combinação estatística de gols e escanteios com odd total máxima de 1,80."
+                      ? "Monte uma combinação estatística de gols e escanteios. Faixa de odd recomendada: 1,62 a 1,80."
                       : tab === "ai"
                       ? "Faça perguntas somente sobre os números da partida."
                       : tab==="live"?"Escolha um jogo do dia para receber a análise automática.":"Selecione a competição e as equipes para calcular tendências."}
@@ -1053,19 +1050,19 @@ export default function Home() {
               </section>}
               {tab==="prebot"&&<section className="prebot-shell">
                 <section className="panel prebot-selector">
-                  <div className="panel-head"><i className="prebot-icon">🤖</i><div><h3>Selecione a partida</h3><p>O bot usa somente o histórico real salvo no sistema</p></div>{(home||away||preBotResult)&&<button className="clear-context" onClick={()=>{clearPreAnalysis();setPreBotOdd("");setPreBotResult(null)}}>× Limpar</button>}</div>
+                  <div className="panel-head"><i className="prebot-icon">🤖</i><div><h3>Selecione a partida</h3><p>O bot usa somente o histórico real salvo no sistema</p></div>{(home||away||preBotResult)&&<button className="clear-context" onClick={()=>{clearPreAnalysis();setPreBotResult(null)}}>× Limpar</button>}</div>
                   <div className="prebot-grid">
                     <Select label="Competição" value={leagueId} set={v=>{setLeagueId(v);setAwayLeagueId(v);setPreBotResult(null)}} placeholder="Selecionar liga..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/>
                     <Select label="Mandante" value={home} set={v=>{setHome(v);setPreBotResult(null)}} placeholder="Selecionar time da casa..." options={teams.map(t=>[t,t])} disabled={!league}/>
                     <Select label="Visitante" value={away} set={v=>{setAway(v);setPreBotResult(null)}} placeholder="Selecionar time visitante..." options={teams.filter(t=>t!==home).map(t=>[t,t])} disabled={!league}/>
-                    <label>Odd total atual<input type="number" min="1.01" max="1.80" step="0.01" value={preBotOdd} onChange={e=>{setPreBotOdd(e.target.value);setPreBotResult(null)}} placeholder="Ex.: 1,72"/></label>
+                    <div className="prebot-odd-reminder"><small>ODD RECOMENDADA</small><strong>1,62 a 1,80</strong><span>Apenas lembrete — confira a odd atual</span></div>
                   </div>
                   <button className="primary prebot-analyze" disabled={!home||!away} onClick={analyzePreBot}>ANALISAR PARTIDA</button>
                 </section>
                 <section className="prebot-flow" aria-label="Etapas da análise"><article><b>1</b><span>◷</span><strong>Histórico</strong><small>Últimos jogos</small></article><article><b>2</b><span>⌂</span><strong>Casa/Fora</strong><small>Condição das equipes</small></article><article><b>3</b><span>▥</span><strong>Dois mercados</strong><small>Gols + escanteios</small></article><article><b>4</b><span>▽</span><strong>Filtro de risco</strong><small>Odd máxima 1,80</small></article></section>
-                {!preBotResult?<section className="panel prebot-empty"><span>🤖</span><h3>Bot pronto para analisar</h3><p>Escolha os times, informe a odd total encontrada e clique em analisar.</p></section>:<section className={`prebot-result ${preBotResult.approved?"approved":"rejected"}`}>
+                {!preBotResult?<section className="panel prebot-empty"><span>🤖</span><h3>Bot pronto para analisar</h3><p>Escolha os times e clique em analisar. Use a faixa de odd apenas como referência.</p></section>:<section className={`prebot-result ${preBotResult.approved?"approved":"rejected"}`}>
                   <header><span>{preBotResult.approved?"✓":"×"}</span><div><small>DECISÃO DO BOT</small><h3>{preBotResult.approved?"ENTRADA APROVADA":"SEM ENTRADA RECOMENDADA"}</h3></div></header>
-                  {preBotResult.approved?<><div className="prebot-result-grid"><article><small>MERCADO 1</small><b>{preBotResult.markets[0]}</b></article><i>＋</i><article><small>MERCADO 2</small><b>{preBotResult.markets[1]}</b></article><article><small>ODD TOTAL</small><strong>{Number(preBotOdd).toFixed(2).replace(".",",")}</strong></article><article><small>CONFIANÇA</small><strong>{preBotResult.confidence}%</strong></article><article><small>RISCO</small><strong>{preBotResult.risk}</strong></article></div><div className="prebot-evidence"><small>EVIDÊNCIAS</small>{preBotResult.evidence.map(x=><p key={x}>✓ {x}</p>)}</div><div className="prebot-actions"><button className="primary" onClick={copyPreBot}>COPIAR ENTRADA</button><a href="https://www.bet365.com/" target="_blank" rel="noopener noreferrer">ABRIR BET365</a></div><p className="prebot-confirm">A seleção e a odd deverão ser confirmadas manualmente na casa de apostas.</p></>:<><p className="prebot-reason">{preBotResult.reason}</p><div className="prebot-evidence">{preBotResult.evidence.map(x=><p key={x}>• {x}</p>)}</div></>}
+                  {preBotResult.approved?<><div className="prebot-result-grid"><article><small>MERCADO 1</small><b>{preBotResult.markets[0]}</b></article><i>＋</i><article><small>MERCADO 2</small><b>{preBotResult.markets[1]}</b></article><article><small>ODD RECOMENDADA</small><strong>1,62–1,80</strong></article><article><small>CONFIANÇA</small><strong>{preBotResult.confidence}%</strong></article><article><small>RISCO</small><strong>{preBotResult.risk}</strong></article></div><div className="prebot-evidence"><small>EVIDÊNCIAS</small>{preBotResult.evidence.map(x=><p key={x}>✓ {x}</p>)}</div><div className="prebot-actions"><button className="primary" onClick={copyPreBot}>COPIAR ENTRADA</button><a href="https://www.bet365.com/" target="_blank" rel="noopener noreferrer">ABRIR BET365</a></div><p className="prebot-confirm">Odd recomendada de 1,62 a 1,80. A seleção e a odd atual deverão ser confirmadas manualmente.</p></>:<><p className="prebot-reason">{preBotResult.reason}</p><div className="prebot-evidence">{preBotResult.evidence.map(x=><p key={x}>• {x}</p>)}</div></>}
                 </section>}
                 <footer className="prebot-warning">⚠ Análise estatística — nenhuma aposta é garantida. Aposte com responsabilidade.</footer>
               </section>}
