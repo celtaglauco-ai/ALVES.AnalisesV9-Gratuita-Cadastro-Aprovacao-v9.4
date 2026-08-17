@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { initDb, pool } from "@/lib/db";
 
 export async function GET() {
-  const s=await getSession(); if(!s||s.role!=="user") return NextResponse.json({error:"Acesso de usuário obrigatório."},{status:401});
+  const s=await getSession(); if(!s) return NextResponse.json({error:"Acesso autenticado obrigatório."},{status:401});
   await initDb();
   const [profile,history]=await Promise.all([
     pool.query("SELECT settings,updated_at FROM user_profiles WHERE user_id=$1",[s.id]),
@@ -14,7 +14,7 @@ export async function GET() {
   return NextResponse.json({settings:profile.rows[0]?.settings||{},history:items,performance:{total,hits,misses,pending,accuracy:resolved?Math.round(hits/resolved*100):0}});
 }
 export async function POST(req:Request){
-  const s=await getSession(); if(!s||s.role!=="user") return NextResponse.json({error:"Acesso de usuário obrigatório."},{status:401});
+  const s=await getSession(); if(!s) return NextResponse.json({error:"Acesso autenticado obrigatório."},{status:401});
   const b=await req.json(); await initDb();
   if(b.type==="settings"){
     await pool.query("INSERT INTO user_profiles(user_id,settings,updated_at) VALUES($1,$2::jsonb,$3) ON CONFLICT(user_id) DO UPDATE SET settings=EXCLUDED.settings,updated_at=EXCLUDED.updated_at",[s.id,JSON.stringify(b.settings||{}),Date.now()]);

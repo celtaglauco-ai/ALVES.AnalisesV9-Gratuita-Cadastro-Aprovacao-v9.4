@@ -33,6 +33,9 @@ export function initDb() {
  ); ALTER TABLE leagues ADD COLUMN IF NOT EXISTS data_quality JSONB NOT NULL DEFAULT '{"goals":true,"corners":true,"cards":true,"shots":true,"shotsOnTarget":true}'::jsonb;
  ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen BIGINT NOT NULL DEFAULT 0;
  CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_ci ON users (lower(email));
+ INSERT INTO users(id,name,email,password_hash,status,created_at,updated_at,last_seen)
+ VALUES('admin','Administrador','admin@alves.local','', 'approved',0,0,0)
+ ON CONFLICT(id) DO NOTHING;
  CREATE TABLE IF NOT EXISTS user_profiles (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   settings JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at BIGINT NOT NULL
