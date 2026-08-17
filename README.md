@@ -65,4 +65,5 @@ A nova aba **Bot Pré-Live** monta uma combinação de dois mercados — mais de
 - A entrada só é aprovada quando os dois mercados alcançam ao menos 65% na amostra.
 - Sem escanteios no CSV, sem amostra ou fora do limite, o bot rejeita a entrada.
 - O botão **Copiar entrada** prepara o texto; **Abrir Bet365** abre o site em outra aba. A seleção deve ser confirmada manualmente.
+- Usuários podem clicar em **Salvar previsão**; a combinação entra como Aguardando no painel de desempenho, onde o administrador confirma Acerto ou Erro após o jogo.
 - Nenhuma função anterior foi removida.

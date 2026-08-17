@@ -22,7 +22,7 @@ export async function POST(req:Request){
   }
   if(b.type==="history"){
     const home=String(b.home||"").slice(0,100),away=String(b.away||"").slice(0,100); if(!home||!away)return NextResponse.json({error:"Times ausentes."},{status:400});
-    const probabilities=b.snapshot?.probabilities||{},markets=[{name:"Gols",value:Number(probabilities.goals||0)},{name:"Escanteios",value:Number(probabilities.corners||0)},{name:"Cartões",value:Number(probabilities.cards||0)}].sort((a,c)=>c.value-a.value),primary=markets[0]||{name:"Análise geral",value:0};
+    const probabilities=b.snapshot?.probabilities||{},markets=[{name:"Gols",value:Number(probabilities.goals||0)},{name:"Escanteios",value:Number(probabilities.corners||0)},{name:"Cartões",value:Number(probabilities.cards||0)}].sort((a,c)=>c.value-a.value),requestedMarket=String(b.market||"").trim().slice(0,100),primary=requestedMarket?{name:requestedMarket,value:Number(b.confidence||0)}:markets[0]||{name:"Análise geral",value:0};
     await pool.query("INSERT INTO analysis_history(id,user_id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,'pending')",[crypto.randomUUID(),s.id,String(b.mode||"pre").slice(0,20),String(b.leagueId||"").slice(0,100),home,away,JSON.stringify(b.snapshot||{}),Date.now(),primary.name,Math.max(0,Math.min(100,Number(b.confidence||primary.value||0)))]);
     return NextResponse.json({ok:true});
   }
