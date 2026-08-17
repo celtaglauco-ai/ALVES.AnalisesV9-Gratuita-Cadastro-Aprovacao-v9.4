@@ -371,6 +371,9 @@ export default function Home() {
       ca = g.map((x) => x.hy + x.ay + x.hr + x.ar);
     return {
       games: g.length,
+      goalTotals: go,
+      cornerTotals: co,
+      cardTotals: ca,
       goals: avg(go),
       corners: avg(co),
       cards: avg(ca),
@@ -382,10 +385,14 @@ export default function Home() {
       possession: avg(g.map((x) => venue === "home" ? (x.hp || 0) : (x.ap || 0))),
       over25: pct(go, (x) => x >= 3),
       over15: pct(go, (x) => x >= 2),
+      under45: pct(go, (x) => x <= 4),
       btts: pct(g, (x) => x.hg > 0 && x.ag > 0),
       overCorners: pct(co, (x) => x >= 9),
       over75Corners: pct(co, (x) => x >= 8),
+      under125Corners: pct(co, (x) => x <= 12),
       overCards: pct(ca, (x) => x >= 5),
+      over25Cards: pct(ca, (x) => x >= 3),
+      under55Cards: pct(ca, (x) => x <= 5),
     };
   };
   const a = home ? stats(league, home, "home") : null,
@@ -474,25 +481,41 @@ export default function Home() {
     setPreBotSaved(false);
     const leaguesSelected=!!leagueId&&!!awayLeagueId,
       cornersAvailable=!!(league?.quality?.corners&&awayLeague?.quality?.corners),
-      goalsChance=ready?(a!.over15+b!.over15)/2:0,
-      cornersChance=ready&&cornersAvailable?(a!.over75Corners+b!.over75Corners)/2:0,
+      cardsAvailable=!!(league?.quality?.cards&&awayLeague?.quality?.cards),
       enoughSample=ready&&a!.games>=5&&b!.games>=5,
-      markets:string[]=[];
-    if(goalsChance>=65)markets.push("Mais de 1,5 gols");
-    if(cornersAvailable&&cornersChance>=65)markets.push("Mais de 7,5 escanteios");
-    const selected=markets.slice(0,2),confidence=Math.round(selected.length===2?(goalsChance+cornersChance)/2:selected.length?goalsChance:0),reasons:string[]=[];
+      evaluate=(label:string,line:number,direction:"over"|"under",left:number[],right:number[])=>{
+        const test=(value:number)=>direction==="over"?value>line:value<line,
+          leftAll=pct(left,test),rightAll=pct(right,test),overall=(leftAll+rightAll)/2,
+          leftRecent=pct(left.slice(-5),test),rightRecent=pct(right.slice(-5),test),recent=(leftRecent+rightRecent)/2,
+          chance=overall*.6+recent*.4,stability=Math.abs(overall-recent),
+          score=chance-stability*.35-Math.abs(chance-78)*.18;
+        return {name:`${direction==="over"?"Mais":"Menos"} de ${line.toFixed(1).replace(".",",")} ${label}`,chance,overall,recent,stability,score};
+      },
+      choose=(label:string,lines:{over:number[];under:number[]},left:number[],right:number[])=>{
+        const candidates=[...lines.over.map(line=>evaluate(label,line,"over",left,right)),...lines.under.map(line=>evaluate(label,line,"under",left,right))],
+          qualified=candidates.filter(x=>x.chance>=65&&x.overall>=60&&x.recent>=60);
+        return [...(qualified.length?qualified:candidates)].sort((x,y)=>y.score-x.score)[0];
+      },
+      goalPick=ready?choose("gols",{over:[.5,1.5,2.5,3.5],under:[2.5,3.5,4.5,5.5]},a!.goalTotals,b!.goalTotals):null,
+      cornerPick=ready&&cornersAvailable?choose("escanteios",{over:[5.5,6.5,7.5,8.5,9.5,10.5],under:[8.5,9.5,10.5,11.5,12.5,13.5]},a!.cornerTotals,b!.cornerTotals):null,
+      cardPick=ready&&cardsAvailable?choose("cartões",{over:[1.5,2.5,3.5,4.5,5.5],under:[2.5,3.5,4.5,5.5,6.5,7.5]},a!.cardTotals,b!.cardTotals):null,
+      availablePicks=[goalPick,cornerPick,cardPick].filter((x):x is {name:string;chance:number;overall:number;recent:number;stability:number;score:number}=>!!x),
+      selectedPicks=availablePicks.filter(x=>x.chance>=65),selected=selectedPicks.map(x=>x.name),
+      confidence=Math.round(selectedPicks.length?avg(selectedPicks.map(x=>x.chance)):0),reasons:string[]=[];
     if(!leaguesSelected)reasons.push("Selecione a competição do mandante e a competição do visitante.");
     if(!enoughSample)reasons.push("São necessários pelo menos 5 jogos de cada equipe na condição casa/fora.");
-    if(selected.length<2)reasons.push(cornersAvailable?"Os dois mercados não atingiram juntos o mínimo estatístico de 65%.":"O CSV desta competição não possui escanteios suficientes para montar a combinação.");
-    const approved=!reasons.length&&selected.length===2;
-    setPreBotResult({approved,markets:selected,confidence,risk:confidence>=78?"Baixo":confidence>=70?"Médio":"Alto",evidence:[`${goalsChance.toFixed(0)}% da amostra sustenta +1,5 gols`,cornersAvailable?`${cornersChance.toFixed(0)}% da amostra sustenta +7,5 escanteios`:"Escanteios indisponíveis no CSV",`${a?.games||0} jogos do mandante e ${b?.games||0} do visitante analisados`],reason:approved?"Os dois mercados passaram pelos filtros de amostra, tendência e odd máxima.":reasons.join(" ")});
+    if(!cornersAvailable)reasons.push("Escanteios indisponíveis no CSV.");
+    if(!cardsAvailable)reasons.push("Cartões indisponíveis no CSV.");
+    if(selectedPicks.length<availablePicks.length)reasons.push("Uma ou mais categorias não atingiram o mínimo estatístico de 65%.");
+    const approved=leaguesSelected&&enoughSample&&selected.length>=2&&selectedPicks.length===availablePicks.length;
+    setPreBotResult({approved,markets:selected,confidence,risk:confidence>=78?"Baixo":confidence>=70?"Médio":"Alto",evidence:[...selectedPicks.map(x=>`${x.chance.toFixed(0)}% ponderado para ${x.name.toLowerCase()} • últimos 5: ${x.recent.toFixed(0)}%`),`${a?.games||0} jogos do mandante e ${b?.games||0} do visitante analisados`],reason:approved?`O bot testou várias linhas de mais e menos e selecionou ${selected.length} tendências com melhor equilíbrio entre frequência e estabilidade.`:reasons.join(" ")});
   };
   const copyPreBot=async()=>{if(!preBotResult?.approved)return;const text=`${home} × ${away}\n${preBotResult.markets.join(" + ")}\nOdd recomendada: de 1,62 a 1,80\nConfiança estatística: ${preBotResult.confidence}%`;try{await navigator.clipboard.writeText(text);setNotice("Entrada copiada. Confira as seleções e a odd na casa de apostas.")}catch{setNotice(text)}};
   const savePreBotPrediction=async()=>{
     if(!preBotResult?.approved||preBotSaving||preBotSaved)return;
     setPreBotSaving(true);
     try{
-      const r=await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode:"prebot",leagueId,home,away,market:"Gols + Escanteios",confidence:preBotResult.confidence,snapshot:{awayLeagueId:leagueId,homeStats:a,awayStats:b,probabilities:{goals:a&&b?(a.over15+b.over15)/2:0,corners:a&&b?(a.over75Corners+b.over75Corners)/2:0,btts:base.btts,cards:base.cards},preBot:{markets:preBotResult.markets,oddRecommended:"1,62 a 1,80",evidence:preBotResult.evidence}}})}),d=await r.json();
+      const r=await fetch("/api/user/data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"history",mode:"prebot",leagueId,home,away,market:preBotResult.markets.join(" + "),confidence:preBotResult.confidence,snapshot:{awayLeagueId,homeStats:a,awayStats:b,probabilities:{goals:base.goals,corners:base.corners,btts:base.btts,cards:base.cards},preBot:{markets:preBotResult.markets,oddRecommended:"1,62 a 1,80",evidence:preBotResult.evidence}}})}),d=await r.json();
       if(!r.ok)return setNotice(d.error||"Não foi possível salvar a previsão.");
       setPreBotSaved(true);setNotice("Previsão salva como Aguardando no painel de desempenho.");await loadPrivateHistory();
     }finally{setPreBotSaving(false)}
@@ -1072,10 +1095,11 @@ export default function Home() {
                   </div>
                   <button className="primary prebot-analyze" disabled={!home||!away} onClick={analyzePreBot}>ANALISAR PARTIDA</button>
                 </section>
-                <section className="prebot-flow" aria-label="Etapas da análise"><article><b>1</b><span>◷</span><strong>Histórico</strong><small>Últimos jogos</small></article><article><b>2</b><span>⌂</span><strong>Casa/Fora</strong><small>Condição das equipes</small></article><article><b>3</b><span>▥</span><strong>Dois mercados</strong><small>Gols + escanteios</small></article><article><b>4</b><span>▽</span><strong>Filtro de risco</strong><small>Odd máxima 1,80</small></article></section>
+                <section className="prebot-flow" aria-label="Etapas da análise"><article><b>1</b><span>◷</span><strong>Histórico</strong><small>Últimos jogos</small></article><article><b>2</b><span>⌂</span><strong>Casa/Fora</strong><small>Condição das equipes</small></article><article><b>3</b><span>▥</span><strong>Até três mercados</strong><small>Gols + cantos + cartões</small></article><article><b>4</b><span>▽</span><strong>Filtro de risco</strong><small>Escolha entre mais e menos</small></article></section>
+                <div className="prebot-responsible-message"><span>⚠</span><p><b>Antes de fazer sua aposta, use nossos serviços para ter mais certeza em sua análise.</b><strong>APOSTE COM RESPONSABILIDADE</strong></p></div>
                 {!preBotResult?<section className="panel prebot-empty"><span>🤖</span><h3>Bot pronto para analisar</h3><p>Escolha os times e clique em analisar. Use a faixa de odd apenas como referência.</p></section>:<section className={`prebot-result ${preBotResult.approved?"approved":"rejected"}`}>
                   <header><span>{preBotResult.approved?"✓":"×"}</span><div><small>DECISÃO DO BOT</small><h3>{preBotResult.approved?"ENTRADA APROVADA":"SEM ENTRADA RECOMENDADA"}</h3></div></header>
-                  {preBotResult.approved?<><div className="prebot-result-grid"><article><small>MERCADO 1</small><b>{preBotResult.markets[0]}</b></article><i>＋</i><article><small>MERCADO 2</small><b>{preBotResult.markets[1]}</b></article><article><small>ODD RECOMENDADA</small><strong>1,62–1,80</strong></article><article><small>CONFIANÇA</small><strong>{preBotResult.confidence}%</strong></article><article><small>RISCO</small><strong>{preBotResult.risk}</strong></article></div><div className="prebot-evidence"><small>EVIDÊNCIAS</small>{preBotResult.evidence.map(x=><p key={x}>✓ {x}</p>)}</div><div className="prebot-actions prebot-actions-three"><button className="primary" onClick={copyPreBot}>COPIAR ENTRADA</button><button className={`prebot-save ${preBotSaved?"saved":""}`} disabled={preBotSaving||preBotSaved} onClick={savePreBotPrediction}>{preBotSaved?"✓ PREVISÃO SALVA":preBotSaving?"SALVANDO...":"SALVAR PREVISÃO"}</button><a href="https://www.bet365.com/" target="_blank" rel="noopener noreferrer">ABRIR BET365</a></div>{preBotSaved&&<div className="prebot-saved-note">✓ Registrada como <b>Aguardando</b>. Depois do jogo, o administrador poderá confirmar Acerto ou Erro.</div>}<p className="prebot-confirm">Odd recomendada de 1,62 a 1,80. A seleção e a odd atual deverão ser confirmadas manualmente.</p></>:<><p className="prebot-reason">{preBotResult.reason}</p><div className="prebot-evidence">{preBotResult.evidence.map(x=><p key={x}>• {x}</p>)}</div></>}
+                  {preBotResult.approved?<><div className="prebot-result-grid prebot-dynamic-markets"><div className="prebot-market-picks">{preBotResult.markets.map((market,index)=><span key={market}><article><small>MERCADO {index+1}</small><b>{market}</b></article>{index<preBotResult.markets.length-1&&<i>＋</i>}</span>)}</div><article><small>ODD RECOMENDADA</small><strong>1,62–1,80</strong></article><article><small>CONFIANÇA</small><strong>{preBotResult.confidence}%</strong></article><article><small>RISCO</small><strong>{preBotResult.risk}</strong></article></div><div className="prebot-evidence"><small>EVIDÊNCIAS</small>{preBotResult.evidence.map(x=><p key={x}>✓ {x}</p>)}</div><div className="prebot-actions prebot-actions-three"><button className="primary" onClick={copyPreBot}>COPIAR ENTRADA</button><button className={`prebot-save ${preBotSaved?"saved":""}`} disabled={preBotSaving||preBotSaved} onClick={savePreBotPrediction}>{preBotSaved?"✓ PREVISÃO SALVA":preBotSaving?"SALVANDO...":"SALVAR PREVISÃO"}</button><a href="https://www.bet365.com/" target="_blank" rel="noopener noreferrer">ABRIR BET365</a></div>{preBotSaved&&<div className="prebot-saved-note">✓ Registrada como <b>Aguardando</b>. Depois do jogo, o administrador poderá confirmar Acerto ou Erro.</div>}<p className="prebot-confirm">Odd recomendada de 1,62 a 1,80. A seleção e a odd atual deverão ser confirmadas manualmente.</p></>:<><p className="prebot-reason">{preBotResult.reason}</p><div className="prebot-evidence">{preBotResult.evidence.map(x=><p key={x}>• {x}</p>)}</div></>}
                 </section>}
                 <footer className="prebot-warning">⚠ Análise estatística — nenhuma aposta é garantida. Aposte com responsabilidade.</footer>
               </section>}
