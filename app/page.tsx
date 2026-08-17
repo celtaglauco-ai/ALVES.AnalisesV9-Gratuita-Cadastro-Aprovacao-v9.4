@@ -472,7 +472,7 @@ export default function Home() {
     );
   const analyzePreBot=()=>{
     setPreBotSaved(false);
-    const sameLeague=!!leagueId&&leagueId===awayLeagueId,
+    const leaguesSelected=!!leagueId&&!!awayLeagueId,
       cornersAvailable=!!(league?.quality?.corners&&awayLeague?.quality?.corners),
       goalsChance=ready?(a!.over15+b!.over15)/2:0,
       cornersChance=ready&&cornersAvailable?(a!.over75Corners+b!.over75Corners)/2:0,
@@ -481,7 +481,7 @@ export default function Home() {
     if(goalsChance>=65)markets.push("Mais de 1,5 gols");
     if(cornersAvailable&&cornersChance>=65)markets.push("Mais de 7,5 escanteios");
     const selected=markets.slice(0,2),confidence=Math.round(selected.length===2?(goalsChance+cornersChance)/2:selected.length?goalsChance:0),reasons:string[]=[];
-    if(!sameLeague)reasons.push("Selecione os dois times da mesma competição.");
+    if(!leaguesSelected)reasons.push("Selecione a competição do mandante e a competição do visitante.");
     if(!enoughSample)reasons.push("São necessários pelo menos 5 jogos de cada equipe na condição casa/fora.");
     if(selected.length<2)reasons.push(cornersAvailable?"Os dois mercados não atingiram juntos o mínimo estatístico de 65%.":"O CSV desta competição não possui escanteios suficientes para montar a combinação.");
     const approved=!reasons.length&&selected.length===2;
@@ -1063,10 +1063,11 @@ export default function Home() {
               {tab==="prebot"&&<section className="prebot-shell">
                 <section className="panel prebot-selector">
                   <div className="panel-head"><i className="prebot-icon">🤖</i><div><h3>Selecione a partida</h3><p>O bot usa somente o histórico real salvo no sistema</p></div>{(home||away||preBotResult)&&<button className="clear-context" onClick={()=>{clearPreAnalysis();setPreBotResult(null);setPreBotSaved(false)}}>× Limpar</button>}</div>
-                  <div className="prebot-grid">
-                    <Select label="Competição" value={leagueId} set={v=>{setLeagueId(v);setAwayLeagueId(v);setPreBotResult(null);setPreBotSaved(false)}} placeholder="Selecionar liga..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/>
+                  <div className="prebot-grid prebot-cross-grid">
+                    <Select label="Liga do mandante" value={leagueId} set={v=>{setLeagueId(v);setPreBotResult(null);setPreBotSaved(false)}} placeholder="Selecionar liga da casa..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/>
                     <Select label="Mandante" value={home} set={v=>{setHome(v);setPreBotResult(null);setPreBotSaved(false)}} placeholder="Selecionar time da casa..." options={teams.map(t=>[t,t])} disabled={!league}/>
-                    <Select label="Visitante" value={away} set={v=>{setAway(v);setPreBotResult(null);setPreBotSaved(false)}} placeholder="Selecionar time visitante..." options={teams.filter(t=>t!==home).map(t=>[t,t])} disabled={!league}/>
+                    <Select label="Liga do visitante" value={awayLeagueId} set={v=>{setAwayLeagueId(v);setPreBotResult(null);setPreBotSaved(false)}} placeholder="Selecionar liga visitante..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/>
+                    <Select label="Visitante" value={away} set={v=>{setAway(v);setPreBotResult(null);setPreBotSaved(false)}} placeholder="Selecionar time visitante..." options={awayTeams.filter(t=>!(leagueId===awayLeagueId&&t===home)).map(t=>[t,t])} disabled={!awayLeague}/>
                     <div className="prebot-odd-reminder"><small>ODD RECOMENDADA</small><strong>1,62 a 1,80</strong><span>Apenas lembrete — confira a odd atual</span></div>
                   </div>
                   <button className="primary prebot-analyze" disabled={!home||!away} onClick={analyzePreBot}>ANALISAR PARTIDA</button>
