@@ -1,6 +1,7 @@
 import {NextResponse} from "next/server";
 import {isAdmin} from "@/lib/auth";
 import {initDb,pool} from "@/lib/db";
+import {settlePendingAnalyses} from "@/lib/settlement";
 
 type Row={id:string;mode:string;league_id?:string;home:string;away:string;market:string;confidence:number;result_status:"pending"|"hit"|"miss";result_note:string;created_at:number;user_name:string;league_name?:string};
 type GroupBase={name:string;total:number;hits:number;misses:number};
@@ -14,7 +15,7 @@ const groupValues=(entries:{name:string;status:string}[])=>Object.values(entries
 export async function GET(){
  if(!await isAdmin())return NextResponse.json({error:"Acesso administrativo obrigatório."},{status:401});
  await initDb();
- const {rows:raw}=await pool.query(`SELECT h.id,h.mode,h.league_id,h.home,h.away,h.market,h.confidence,h.result_status,h.result_note,h.created_at,h.resolved_at,u.name user_name,u.email,l.name league_name
+ const {rows:raw}=await pool.query(`SELECT h.id,h.mode,h.league_id,h.home,h.away,h.market,h.confidence,h.result_status,h.result_note,h.component_results,h.resolution_source,h.matched_game,h.created_at,h.resolved_at,u.name user_name,u.email,l.name league_name
   FROM analysis_history h JOIN users u ON u.id=h.user_id LEFT JOIN leagues l ON l.id=h.league_id ORDER BY h.created_at DESC LIMIT 1000`);
  const rows=raw as Row[],total=rows.length,hits=rows.filter(x=>x.result_status==='hit').length,misses=rows.filter(x=>x.result_status==='miss').length,pending=rows.filter(x=>x.result_status==='pending').length,resolved=hits+misses;
  const recent=(days:number)=>{const cut=Date.now()-days*86400000,list=rows.filter(x=>Number(x.created_at)>=cut),h=list.filter(x=>x.result_status==='hit').length,m=list.filter(x=>x.result_status==='miss').length;return {total:list.length,hits:h,misses:m,accuracy:pct(h,m)}};
@@ -39,6 +40,11 @@ export async function GET(){
  }
  if(pending)insights.push(`${pending} previsão(ões) ainda aguardam conferência e não entram na taxa real.`);
  return NextResponse.json({summary:{total,hits,misses,pending,accuracy:pct(hits,misses),resolved,minSample:MIN_SAMPLE,sampleReady:resolved>=MIN_SAMPLE},trend:{days7:recent(7),days30:recent(30)},monthly,cumulative,byLeague,byMarket,byLine,byDirection,byMode,highlights:{bestLeague,bestMarket,worstMarket,bestLine,bestDirection},insights,items:rows});
+}
+
+export async function POST(){
+ if(!await isAdmin())return NextResponse.json({error:"Acesso administrativo obrigatório."},{status:401});
+ await initDb();return NextResponse.json({ok:true,...await settlePendingAnalyses()});
 }
 
 export async function PATCH(req:Request){

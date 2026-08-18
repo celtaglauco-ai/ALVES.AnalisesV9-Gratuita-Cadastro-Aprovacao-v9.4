@@ -52,6 +52,9 @@ export function initDb() {
  ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS result_status TEXT NOT NULL DEFAULT 'pending';
  ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS result_note TEXT NOT NULL DEFAULT '';
  ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS resolved_at BIGINT NOT NULL DEFAULT 0;
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS component_results JSONB NOT NULL DEFAULT '[]'::jsonb;
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS resolution_source TEXT NOT NULL DEFAULT '';
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS matched_game JSONB NOT NULL DEFAULT '{}'::jsonb;
  CREATE TABLE IF NOT EXISTS referees (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT '', league_id TEXT NOT NULL DEFAULT '',
   games INTEGER NOT NULL DEFAULT 0, fouls_per_game DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -88,16 +91,17 @@ export async function listLeagues(): Promise<League[]> {
       s.current_round api_round,s.remaining api_remaining
      FROM leagues l LEFT JOIN league_api_sync s ON s.league_id=l.id ORDER BY l.country,l.name,l.season`,
   );
-  return rows.map((r) => ({
+  return rows.map((r) => {const games=Array.isArray(r.games)?r.games:[],quality=r.data_quality||{},keys=new Set<string>(),duplicates=games.reduce((n:any,g:any)=>{const key=`${String(g.date||"").slice(0,10)}|${String(g.home||"").toLowerCase()}|${String(g.away||"").toLowerCase()}`;if(keys.has(key))return n+1;keys.add(key);return n},0),datedGames=games.filter((g:any)=>g.date&&Number.isFinite(Date.parse(g.date))).length,dates=games.map((g:any)=>g.date).filter((x:any)=>x&&Number.isFinite(Date.parse(x))).sort((a:string,b:string)=>Date.parse(b)-Date.parse(a)),score=Math.max(0,Math.min(100,30+(quality.corners?15:0)+(quality.cards?15:0)+(quality.shots?10:0)+(quality.shotsOnTarget?10:0)+(games.length?Math.round(datedGames/games.length*10):0)+(duplicates?Math.max(0,10-Math.round(duplicates/games.length*100)):10))),warnings:string[]=[];if(!quality.corners)warnings.push("Sem escanteios");if(!quality.cards)warnings.push("Sem cartões");if(!quality.shots)warnings.push("Sem finalizações");if(datedGames<games.length)warnings.push(`${games.length-datedGames} jogo(s) sem data válida`);if(duplicates)warnings.push(`${duplicates} possível(is) duplicado(s)`);return ({
     id: r.id,
     code: r.code,
     country: r.country,
     name: r.name,
     season: r.season,
     fileName: r.file_name,
-    games: r.games,
-    quality: r.data_quality,
+    games,
+    quality,
+    qualityReport:{score,grade:score>=85?"Excelente":score>=70?"Boa":score>=50?"Regular":"Baixa",totalGames:games.length,duplicates,datedGames,latestGameDate:dates[0],warnings},
     updatedAt: Number(r.updated_at),
     apiSync: r.api_updated_at ? {updatedAt:Number(r.api_updated_at),status:r.api_status,error:r.api_error,round:r.api_round,remaining:r.api_remaining,games:r.api_games||[]} : undefined,
-  }));
+  })});
 }

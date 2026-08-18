@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { initDb, pool } from "@/lib/db";
 import type { DataQuality, Game } from "@/lib/types";
+import { settlePendingAnalyses } from "@/lib/settlement";
 
 type Payload = {
   action: "create" | "update";
@@ -81,7 +82,8 @@ export async function POST(req: Request) {
           { error: "Liga escolhida não foi encontrada." },
           { status: 404 },
         );
-      return NextResponse.json({ ok: true, id: x.targetId, updated: true });
+      const settlement=await settlePendingAnalyses().catch(()=>({checked:0,settled:0,partial:0}));
+      return NextResponse.json({ ok: true, id: x.targetId, updated: true, settlement });
     }
     const id = crypto.randomUUID();
     await pool.query(
@@ -98,7 +100,8 @@ export async function POST(req: Request) {
         JSON.stringify(quality),
       ],
     );
-    return NextResponse.json({ ok: true, id, created: true });
+    const settlement=await settlePendingAnalyses().catch(()=>({checked:0,settled:0,partial:0}));
+    return NextResponse.json({ ok: true, id, created: true, settlement });
   } catch {
     return NextResponse.json(
       { error: "Não foi possível salvar a liga." },

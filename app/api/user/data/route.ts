@@ -8,7 +8,7 @@ export async function GET() {
   await initDb();
   const [profile,history]=await Promise.all([
     pool.query("SELECT settings,updated_at FROM user_profiles WHERE user_id=$1",[s.id]),
-    pool.query("SELECT id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status,result_note,resolved_at FROM analysis_history WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[s.id]),
+    pool.query("SELECT id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status,result_note,resolved_at,component_results,resolution_source,matched_game FROM analysis_history WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[s.id]),
   ]);
   const items=history.rows,total=items.length,hits=items.filter(x=>x.result_status==='hit').length,misses=items.filter(x=>x.result_status==='miss').length,pending=items.filter(x=>x.result_status==='pending').length,resolved=hits+misses,pct=(h:number,m:number)=>h+m?Math.round(h/(h+m)*100):0;
   const groups=(entries:{name:string;status:string}[])=>Object.values(entries.reduce((acc:Record<string,{name:string;total:number;hits:number;misses:number}>,x)=>{acc[x.name]||={name:x.name,total:0,hits:0,misses:0};acc[x.name].total++;if(x.status==='hit')acc[x.name].hits++;if(x.status==='miss')acc[x.name].misses++;return acc},{})).map(x=>({...x,resolved:x.hits+x.misses,accuracy:pct(x.hits,x.misses)})).sort((a,b)=>b.accuracy-a.accuracy||b.resolved-a.resolved),

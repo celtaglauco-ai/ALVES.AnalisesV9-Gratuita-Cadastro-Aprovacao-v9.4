@@ -47,6 +47,7 @@ export type League = {
   updatedAt: number;
   games: Game[];
   quality?: DataQuality;
+  qualityReport?: {score:number;grade:"Excelente"|"Boa"|"Regular"|"Baixa";totalGames:number;duplicates:number;datedGames:number;latestGameDate?:string;warnings:string[]};
   apiSync?: {
     updatedAt: number;
     status: string;
