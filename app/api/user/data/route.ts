@@ -28,6 +28,16 @@ export async function POST(req:Request){
   }
   return NextResponse.json({error:"Operação inválida."},{status:400});
 }
+export async function PATCH(req:Request){
+  const s=await getSession(); if(!s||s.role!=="user") return NextResponse.json({error:"Acesso de usuário obrigatório."},{status:401});
+  const b=await req.json(),id=String(b.id||""),status=String(b.status||"");
+  if(!id)return NextResponse.json({error:"Previsão não informada."},{status:400});
+  if(!["pending","hit","miss"].includes(status))return NextResponse.json({error:"Resultado inválido."},{status:400});
+  await initDb();
+  const result=await pool.query("UPDATE analysis_history SET result_status=$1,result_note=$2,resolved_at=$3 WHERE id=$4 AND user_id=$5",[status,String(b.note||"").trim().slice(0,300),status==="pending"?0:Date.now(),id,s.id]);
+  if(!result.rowCount)return NextResponse.json({error:"Previsão não encontrada no seu histórico."},{status:404});
+  return NextResponse.json({ok:true,updated:result.rowCount});
+}
 export async function DELETE(req:Request){
   const s=await getSession(); if(!s||s.role!=="user") return NextResponse.json({error:"Acesso de usuário obrigatório."},{status:401});
   const id=new URL(req.url).searchParams.get("id")||""; if(!id)return NextResponse.json({error:"Análise não informada."},{status:400});
