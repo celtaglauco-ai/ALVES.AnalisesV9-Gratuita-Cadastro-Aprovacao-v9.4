@@ -10,8 +10,14 @@ export async function GET() {
     pool.query("SELECT settings,updated_at FROM user_profiles WHERE user_id=$1",[s.id]),
     pool.query("SELECT id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status,result_note,resolved_at FROM analysis_history WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100",[s.id]),
   ]);
-  const items=history.rows,total=items.length,hits=items.filter(x=>x.result_status==='hit').length,misses=items.filter(x=>x.result_status==='miss').length,pending=items.filter(x=>x.result_status==='pending').length,resolved=hits+misses;
-  return NextResponse.json({settings:profile.rows[0]?.settings||{},history:items,performance:{total,hits,misses,pending,accuracy:resolved?Math.round(hits/resolved*100):0}});
+  const items=history.rows,total=items.length,hits=items.filter(x=>x.result_status==='hit').length,misses=items.filter(x=>x.result_status==='miss').length,pending=items.filter(x=>x.result_status==='pending').length,resolved=hits+misses,pct=(h:number,m:number)=>h+m?Math.round(h/(h+m)*100):0;
+  const groups=(entries:{name:string;status:string}[])=>Object.values(entries.reduce((acc:Record<string,{name:string;total:number;hits:number;misses:number}>,x)=>{acc[x.name]||={name:x.name,total:0,hits:0,misses:0};acc[x.name].total++;if(x.status==='hit')acc[x.name].hits++;if(x.status==='miss')acc[x.name].misses++;return acc},{})).map(x=>({...x,resolved:x.hits+x.misses,accuracy:pct(x.hits,x.misses)})).sort((a,b)=>b.accuracy-a.accuracy||b.resolved-a.resolved),
+    markets=items.flatMap(x=>String(x.market||"Análise geral").split(/\s*\+\s*/).map((m:string)=>({name:/gol/i.test(m)?"Gols":/escanteio|canto/i.test(m)?"Escanteios":/cart/i.test(m)?"Cartões":m,status:x.result_status}))),
+    directions=items.flatMap(x=>String(x.market||"").split(/\s*\+\s*/).map((m:string)=>({name:/^mais/i.test(m)?"Mais (Over)":/^menos/i.test(m)?"Menos (Under)":"Outros",status:x.result_status}))),
+    options=items.filter(x=>x.snapshot?.preBot?.option).map(x=>({name:String(x.snapshot.preBot.option),status:x.result_status})),
+    byMarket=groups(markets),byDirection=groups(directions),byOption=groups(options),eligible=byMarket.filter(x=>x.resolved>=10),best=eligible[0],worst=[...eligible].sort((a,b)=>a.accuracy-b.accuracy)[0],insights:string[]=[];
+  if(resolved<10)insights.push(`Confirme mais ${10-resolved} resultado(s) para liberar conclusões pessoais mais confiáveis.`);else{if(best)insights.push(`${best.name} é seu melhor mercado elegível: ${best.accuracy}% em ${best.resolved} confirmações.`);if(worst&&worst.name!==best?.name)insights.push(`${worst.name} merece revisão: ${worst.accuracy}% em ${worst.resolved} confirmações.`)}if(pending)insights.push(`${pending} previsão(ões) aguardam sua confirmação.`);
+  return NextResponse.json({settings:profile.rows[0]?.settings||{},history:items,performance:{total,hits,misses,pending,accuracy:pct(hits,misses),byMarket,byDirection,byOption,insights}});
 }
 export async function POST(req:Request){
   const s=await getSession(); if(!s) return NextResponse.json({error:"Acesso autenticado obrigatório."},{status:401});
