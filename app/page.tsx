@@ -3,7 +3,7 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { DataQuality, Game, League } from "@/lib/types";
 import AdminPerformance from "./performance";
 import SystemAdmin from "./system-admin";
-type Tab = "pre" | "prebot" | "standings" | "live" | "ai" | "admin";
+type Tab = "pre" | "prebot" | "standings" | "live" | "ai" | "responsible" | "help" | "admin";
 type Msg = { role: "user" | "assistant"; content: string };
 type UserRow = {
   id: string;
@@ -1022,6 +1022,9 @@ export default function Home() {
             title="Análise por IA"
             click={() => publicTab("ai")}
           />
+          <small className="restricted info-menu-label">INFORMAÇÕES</small>
+          <Nav on={tab === "responsible"} icon="⚠" title="Jogo Responsável" click={() => publicTab("responsible")}/>
+          <Nav on={tab === "help"} icon="?" title="Como funciona" click={() => publicTab("help")}/>
           {admin && (
             <>
               <small className="restricted">ÁREA RESTRITA</small>
@@ -1062,6 +1065,8 @@ export default function Home() {
                         ? "CAMPEONATOS E TEMPORADAS"
                       : tab === "live"
                         ? "ANÁLISE AO VIVO"
+                        : tab === "responsible" ? "INFORMAÇÃO IMPORTANTE"
+                        : tab === "help" ? "GUIA DA PLATAFORMA"
                         : "INTELIGÊNCIA ESTATÍSTICA"}
                   </span>
                   <h2>
@@ -1071,6 +1076,10 @@ export default function Home() {
                       ? "Bot Pré-Live"
                       : tab === "ai"
                       ? "Análise de jogos por IA"
+                      : tab === "responsible"
+                      ? "Aposta não é investimento"
+                      : tab === "help"
+                      ? "Como funciona o site"
                       : "Central de análises"}
                   </h2>
                   <p>
@@ -1080,10 +1089,38 @@ export default function Home() {
                       ? "Monte uma combinação estatística de gols e escanteios. Faixa de odd recomendada: 1,62 a 1,80."
                       : tab === "ai"
                       ? "Faça perguntas somente sobre os números da partida."
+                      : tab === "responsible"
+                      ? "Informação, prevenção e uso consciente da plataforma."
+                      : tab === "help"
+                      ? "Entenda os dados, recursos e limites de cada área."
                       : tab==="live"?"Escolha um jogo do dia para receber a análise automática.":"Selecione a competição e as equipes para calcular tendências."}
                   </p>
                 </div>
               </div>
+              {tab==="responsible"&&<section className="panel info-page responsible-page">
+                <div className="info-alert"><span>⚠</span><div><small>AVISO ESSENCIAL</small><h3>Aposta não é investimento</h3><p>Apostas envolvem risco real de perda financeira. Nenhuma estatística, tendência, análise, inteligência artificial ou histórico elimina a incerteza de um evento esportivo.</p></div></div>
+                <div className="info-grid">
+                  <article><span>18+</span><h4>Somente para adultos</h4><p>O conteúdo é destinado exclusivamente a maiores de 18 anos. Menores de idade não devem utilizar serviços de apostas.</p></article>
+                  <article><span>R$</span><h4>Proteja seu dinheiro</h4><p>Nunca aposte dinheiro destinado a alimentação, moradia, saúde, estudos, contas ou emergências. Não faça empréstimos para apostar.</p></article>
+                  <article><span>⏱</span><h4>Defina limites</h4><p>Estabeleça previamente limites de tempo e dinheiro. Não aumente valores para recuperar perdas e pare quando atingir o limite.</p></article>
+                  <article><span>◉</span><h4>Reconheça os sinais</h4><p>Ansiedade, ocultação, dívidas, perda de controle ou prejuízo nos relacionamentos são sinais para interromper a atividade e procurar ajuda especializada.</p></article>
+                </div>
+                <div className="info-legal"><h4>Sobre o ALVES.Análises V12</h4><p>Esta plataforma é uma ferramenta informativa de estatísticas esportivas. Não recebe apostas, não guarda saldo, não opera jogos, não representa casas de apostas e não oferece aconselhamento financeiro. As análises são estimativas baseadas nos dados disponíveis e podem conter atrasos, ausências ou erros de origem. O usuário é responsável por conferir informações, odds, mercados e resultados na plataforma autorizada que decidir utilizar.</p><p><b>Não existe aposta segura ou resultado garantido.</b> Decisões e eventuais perdas são de responsabilidade de quem aposta. Se apostar deixou de ser entretenimento, interrompa o uso e procure apoio profissional.</p></div>
+                <a className="official-help" href="https://www.gov.br/fazenda/pt-br/composicao/orgaos/secretaria-de-premios-e-apostas/jogo-responsavel" target="_blank" rel="noreferrer">Consultar orientações oficiais sobre jogo responsável ↗</a>
+              </section>}
+              {tab==="help"&&<section className="panel info-page help-page">
+                <div className="how-intro"><span>?</span><div><h3>O site transforma dados em leitura estatística</h3><p>Ele organiza históricos e informações disponíveis para ajudar você a estudar partidas. Ele não conhece o futuro e não substitui sua conferência.</p></div></div>
+                <div className="how-list">
+                  <article><b>01</b><div><h4>Pré-jogo</h4><p>Selecione as ligas e as equipes para comparar histórico, desempenho como mandante ou visitante, médias, tendências e qualidade da amostra.</p></div></article>
+                  <article><b>02</b><div><h4>Bot Pré-Live</h4><p>Analisa somente mercados existentes nos dados e apresenta até três opções com perfis diferentes. A faixa de odd é um lembrete: confirme a odd real antes de qualquer decisão.</p></div></article>
+                  <article><b>03</b><div><h4>Classificações</h4><p>Exibe as tabelas cobertas pela fonte disponível. A atualização depende da API e pode sofrer atraso ou indisponibilidade temporária.</p></div></article>
+                  <article><b>04</b><div><h4>Ao vivo</h4><p>Mostra partidas e estatísticas que a API gratuita conseguir fornecer. Dados ausentes não são inventados; nem todo campeonato possui cobertura completa.</p></div></article>
+                  <article><b>05</b><div><h4>Análise por IA</h4><p>Resume os números da partida e ajuda na interpretação. A resposta é uma leitura estatística, não uma promessa, ordem de aposta ou garantia.</p></div></article>
+                  <article><b>06</b><div><h4>Previsões e histórico pessoal</h4><p>Cada usuário salva suas próprias escolhas e pode confirmar acerto, erro ou aguardando. Os resultados pessoais não são misturados com os de outras contas.</p></div></article>
+                </div>
+                <div className="usage-flow"><h4>Antes de considerar uma aposta</h4><p><b>1.</b> Confira se a amostra é suficiente. <b>2.</b> Leia as evidências e o risco. <b>3.</b> Confirme escalações, mercado e odd na operadora. <b>4.</b> Defina um limite que possa perder. <b>5.</b> Registre o resultado real para avaliar seu método.</p></div>
+                <footer>Use os recursos como apoio de estudo. Resultados passados não garantem resultados futuros.</footer>
+              </section>}
               {tab==="pre"&&<section className="panel team-focus-panel">
                 <div className="panel-head"><i className="blue">⌁</i><div><h3>Raio-X de um time específico</h3><p>Selecione uma equipe para visualizar sua produção nos últimos jogos e por períodos da partida</p></div>{xrayTeam&&<button className="clear-context" onClick={()=>setXrayTeam("")}>× Limpar time</button>}</div>
                 <div className="team-focus-selectors"><Select label="Competição" value={xrayLeagueId} set={setXrayLeagueId} placeholder="Selecionar liga..." options={leagues.map(l=>[l.id,`${l.country} — ${l.name} (${l.season})`])}/><Select label="Time para o Raio-X" value={xrayTeam} set={setXrayTeam} placeholder="Selecionar time..." options={xrayTeams.map(t=>[t,t])} disabled={!xrayLeague}/></div>
