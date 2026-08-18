@@ -1,5 +1,5 @@
 "use client";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { DataQuality, Game, League } from "@/lib/types";
 import AdminPerformance from "./performance";
 import SystemAdmin from "./system-admin";
@@ -1539,10 +1539,11 @@ export default function Home() {
                 <article><span>Jogos ao vivo</span><b>{todayLiveCount}</b><small>detectados na consulta atual</small></article>
               </div>
               <AdminPerformance />
-              <SystemAdmin />
-              <section className="panel csv-quality-panel"><div className="panel-head"><i className="orange">✓</i><div><h3>Qualidade dos bancos CSV</h3><p>Nota calculada por cobertura, datas válidas e possíveis duplicidades</p></div></div><div className="csv-quality-grid">{leagues.map(l=><article key={l.id}><header><span><b>{l.name}</b><small>{l.country} • {l.season}</small></span><strong className={(l.qualityReport?.score||0)>=70?"quality-good":"quality-attention"}>{l.qualityReport?.score||0}<small>/100</small></strong></header><div><span><small>CLASSIFICAÇÃO</small><b>{l.qualityReport?.grade||"Sem nota"}</b></span><span><small>PARTIDAS</small><b>{l.qualityReport?.totalGames||0}</b></span><span><small>DUPLICADAS</small><b>{l.qualityReport?.duplicates||0}</b></span><span><small>COM DATA</small><b>{l.qualityReport?.datedGames||0}</b></span></div><progress max="100" value={l.qualityReport?.score||0}/><footer><span>Mais recente: {l.qualityReport?.latestGameDate?new Date(l.qualityReport.latestGameDate).toLocaleDateString("pt-BR"):"data não identificada"}</span>{l.qualityReport?.warnings?.length?<em>{l.qualityReport.warnings.join(" • ")}</em>:<em className="quality-clean">✓ Cobertura completa identificada</em>}</footer></article>)}</div></section>
-              <section className="panel api-control-panel compact-api-control"><div className="panel-head"><i className="green">↻</i><div><h3>Atualização automática e cobertura</h3><p>{leagues.length} ligas • {updatedLeagues} atualizadas • {problemLeagues} com atenção</p></div><button disabled={syncLoading} onClick={syncAll}>{syncLoading?"Atualizando...":"Atualizar todas agora"}</button></div><details className="api-coverage-details"><summary><span>Ver detalhes das competições</span><small>{leagues.length-updatedLeagues-problemLeagues} aguardando atualização</small></summary><div className="api-status-list compact-api-status">{leagues.map(l=><article key={l.id}><span><b>{l.name}</b><small>{l.country} • {l.season}{l.apiSync?.round?` • ${l.apiSync.round}`:""}</small></span><em className={l.apiSync?.status==="updated"?"api-ok":"api-off"}>{l.apiSync?.status==="updated"?"● Atualizada":l.apiSync?.error?"● Erro / sem cobertura":"● Aguardando"}</em><span><b>{l.apiSync?.games.length||0}</b><small>jogos</small></span><span><small>{l.apiSync?.updatedAt?new Date(l.apiSync.updatedAt).toLocaleString("pt-BR"):"Nunca atualizada"}</small>{l.apiSync?.error&&<small title={l.apiSync.error}>Clique ou passe o mouse para ver o erro</small>}</span></article>)}</div></details></section>
-              <UserAdmin />
+              <AdminDrawer icon="⚙" title="Segurança, auditoria e configurações da V12" subtitle="Saúde do sistema, regras, exportações, backup e registros administrativos"><SystemAdmin /></AdminDrawer>
+              <AdminDrawer icon="✓" title="Qualidade dos bancos CSV" subtitle="Notas de cobertura, datas válidas e possíveis duplicidades"><section className="panel csv-quality-panel"><div className="panel-head"><i className="orange">✓</i><div><h3>Qualidade dos bancos CSV</h3><p>Nota calculada por cobertura, datas válidas e possíveis duplicidades</p></div></div><div className="csv-quality-grid">{leagues.map(l=><article key={l.id}><header><span><b>{l.name}</b><small>{l.country} • {l.season}</small></span><strong className={(l.qualityReport?.score||0)>=70?"quality-good":"quality-attention"}>{l.qualityReport?.score||0}<small>/100</small></strong></header><div><span><small>CLASSIFICAÇÃO</small><b>{l.qualityReport?.grade||"Sem nota"}</b></span><span><small>PARTIDAS</small><b>{l.qualityReport?.totalGames||0}</b></span><span><small>DUPLICADAS</small><b>{l.qualityReport?.duplicates||0}</b></span><span><small>COM DATA</small><b>{l.qualityReport?.datedGames||0}</b></span></div><progress max="100" value={l.qualityReport?.score||0}/><footer><span>Mais recente: {l.qualityReport?.latestGameDate?new Date(l.qualityReport.latestGameDate).toLocaleDateString("pt-BR"):"data não identificada"}</span>{l.qualityReport?.warnings?.length?<em>{l.qualityReport.warnings.join(" • ")}</em>:<em className="quality-clean">✓ Cobertura completa identificada</em>}</footer></article>)}</div></section></AdminDrawer>
+              <AdminDrawer icon="↻" title="Atualização automática e cobertura" subtitle={`${leagues.length} ligas • ${updatedLeagues} atualizadas • ${problemLeagues} com atenção`}><section className="panel api-control-panel compact-api-control"><div className="panel-head"><i className="green">↻</i><div><h3>Atualização automática e cobertura</h3><p>{leagues.length} ligas • {updatedLeagues} atualizadas • {problemLeagues} com atenção</p></div><button disabled={syncLoading} onClick={syncAll}>{syncLoading?"Atualizando...":"Atualizar todas agora"}</button></div><details className="api-coverage-details"><summary><span>Ver detalhes das competições</span><small>{leagues.length-updatedLeagues-problemLeagues} aguardando atualização</small></summary><div className="api-status-list compact-api-status">{leagues.map(l=><article key={l.id}><span><b>{l.name}</b><small>{l.country} • {l.season}{l.apiSync?.round?` • ${l.apiSync.round}`:""}</small></span><em className={l.apiSync?.status==="updated"?"api-ok":"api-off"}>{l.apiSync?.status==="updated"?"● Atualizada":l.apiSync?.error?"● Erro / sem cobertura":"● Aguardando"}</em><span><b>{l.apiSync?.games.length||0}</b><small>jogos</small></span><span><small>{l.apiSync?.updatedAt?new Date(l.apiSync.updatedAt).toLocaleString("pt-BR"):"Nunca atualizada"}</small>{l.apiSync?.error&&<small title={l.apiSync.error}>Clique ou passe o mouse para ver o erro</small>}</span></article>)}</div></details></section></AdminDrawer>
+              <AdminDrawer icon="♟" title="Gerenciamento de usuários" subtitle="Aprovações, bloqueios, sessões e senhas temporárias"><UserAdmin /></AdminDrawer>
+              <AdminDrawer icon="⇧" title="Importar ou atualizar CSV de liga" subtitle="Cadastre uma nova competição ou atualize somente a liga escolhida">
               <section className="panel">
                 <div className="panel-head">
                   <i className="blue">⇧</i>
@@ -1674,6 +1675,8 @@ export default function Home() {
                   <span>{notice}</span>
                 </div>
               </section>
+              </AdminDrawer>
+              <AdminDrawer icon="⚖" title="Gerenciamento de árbitros" subtitle="Importação por CSV, cadastro manual, edição e exclusão">
               <section className="panel" id="referee-admin">
                 <div className="panel-head"><i className="green">⇧</i><div><h3>Importar árbitros por CSV</h3><p>Calcula automaticamente as estatísticas do Football-Data sem excluir o cadastro manual</p></div></div>
                 <div className="referee-csv-tools">
@@ -1694,6 +1697,8 @@ export default function Home() {
                 <div className="actions"><button className="primary" disabled={refereeForm.name.trim().length<3} onClick={saveReferee}>{refereeForm.id?"Salvar alterações do árbitro":"＋ Adicionar árbitro"}</button>{refereeForm.id&&<button onClick={()=>setRefereeForm({...emptyReferee})}>Cancelar edição</button>}<span>{notice}</span></div>
                 <div className="referee-admin-list">{manualReferees.map(r=><article key={r.id}><span><b>{r.name}</b><small>{r.country||"País não informado"}{r.leagueId?` • ${leagues.find(l=>l.id===r.leagueId)?.name||"Liga associada"}`:""}</small></span><span>{r.games} jogos • {(r.yellowPerGame+r.redPerGame).toFixed(2)} cartões/jogo</span><div><button onClick={()=>editReferee(r)}>Editar</button><button className="danger" onClick={()=>deleteReferee(r.id)}>Excluir</button></div></article>)}</div>
               </section>
+              </AdminDrawer>
+              <AdminDrawer icon="▤" title="Ligas cadastradas no banco" subtitle={`${leagues.length} competições disponíveis para editar, atualizar ou excluir`}>
               <section className="panel">
                 <div className="panel-head">
                   <i className="green">▤</i>
@@ -1748,6 +1753,7 @@ export default function Home() {
                   ))}
                 </div>
               </section>
+              </AdminDrawer>
             </>
           )}
         </main>
@@ -1934,6 +1940,7 @@ function Empty({ has }: { has: boolean }) {
 }
 
 function Form({values}:{values:("V"|"E"|"D")[]}){return <span className="form-badges">{values.length?values.map((x,i)=><i key={i} className={`form-${x.toLowerCase()}`}>{x}</i>):<em>Sem jogos</em>}</span>}
+function AdminDrawer({icon,title,subtitle,children}:{icon:string;title:string;subtitle:string;children:ReactNode}){return <details className="admin-drawer"><summary><span className="admin-drawer-icon">{icon}</span><span><b>{title}</b><small>{subtitle}</small></span><em>ABRIR</em><i>⌄</i></summary><div className="admin-drawer-content">{children}</div></details>}
 function Compare({label,left,right,suffix="",unavailable=false}:{label:string;left:number;right:number;suffix?:string;unavailable?:boolean}){const max=Math.max(left,right,1),lp=left/max*100,rp=right/max*100;return <article className="compare-card"><h4>{label}</h4>{unavailable?<p className="no-stat">Não disponível neste CSV</p>:<><div className="compare-values"><b>{left.toFixed(2)}{suffix}</b><b>{right.toFixed(2)}{suffix}</b></div><div className="dual-bar"><i style={{width:`${lp/2}%`}}/><i style={{width:`${rp/2}%`}}/></div></>}</article>}
 
 function UserAdmin() {
