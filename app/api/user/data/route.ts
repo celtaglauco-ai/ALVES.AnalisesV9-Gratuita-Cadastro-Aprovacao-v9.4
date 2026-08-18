@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { initDb, pool } from "@/lib/db";
+import {audit,requestIp} from "@/lib/audit";
 
 export async function GET() {
   const s=await getSession(); if(!s) return NextResponse.json({error:"Acesso autenticado obrigatório."},{status:401});
@@ -29,7 +30,8 @@ export async function POST(req:Request){
   if(b.type==="history"){
     const home=String(b.home||"").slice(0,100),away=String(b.away||"").slice(0,100); if(!home||!away)return NextResponse.json({error:"Times ausentes."},{status:400});
     const probabilities=b.snapshot?.probabilities||{},markets=[{name:"Gols",value:Number(probabilities.goals||0)},{name:"Escanteios",value:Number(probabilities.corners||0)},{name:"Cartões",value:Number(probabilities.cards||0)}].sort((a,c)=>c.value-a.value),requestedMarket=String(b.market||"").trim().slice(0,100),primary=requestedMarket?{name:requestedMarket,value:Number(b.confidence||0)}:markets[0]||{name:"Análise geral",value:0};
-    await pool.query("INSERT INTO analysis_history(id,user_id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,'pending')",[crypto.randomUUID(),s.id,String(b.mode||"pre").slice(0,20),String(b.leagueId||"").slice(0,100),home,away,JSON.stringify(b.snapshot||{}),Date.now(),primary.name,Math.max(0,Math.min(100,Number(b.confidence||primary.value||0)))]);
+    const createdAt=Date.now(),leagueId=String(b.leagueId||"").slice(0,100),scheduledDate=String(b.snapshot?.scheduledDate||"").slice(0,30),fixtureKey=[leagueId,scheduledDate,home,away].map(x=>x.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"")).join("|");
+    await pool.query("INSERT INTO analysis_history(id,user_id,mode,league_id,home,away,snapshot,created_at,market,confidence,result_status,fixture_key) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,'pending',$11)",[crypto.randomUUID(),s.id,String(b.mode||"pre").slice(0,20),leagueId,home,away,JSON.stringify(b.snapshot||{}),createdAt,primary.name,Math.max(0,Math.min(100,Number(b.confidence||primary.value||0))),fixtureKey]);
     return NextResponse.json({ok:true});
   }
   return NextResponse.json({error:"Operação inválida."},{status:400});
@@ -42,6 +44,7 @@ export async function PATCH(req:Request){
   await initDb();
   const result=await pool.query("UPDATE analysis_history SET result_status=$1,result_note=$2,resolved_at=$3 WHERE id=$4 AND user_id=$5",[status,String(b.note||"").trim().slice(0,300),status==="pending"?0:Date.now(),id,s.id]);
   if(!result.rowCount)return NextResponse.json({error:"Previsão não encontrada no seu histórico."},{status:404});
+  await audit("prediction_result_changed",s,"analysis",id,{status,note:String(b.note||"").trim().slice(0,300)},requestIp(req));
   return NextResponse.json({ok:true,updated:result.rowCount});
 }
 export async function DELETE(req:Request){

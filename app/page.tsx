@@ -2,6 +2,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { DataQuality, Game, League } from "@/lib/types";
 import AdminPerformance from "./performance";
+import SystemAdmin from "./system-admin";
 type Tab = "pre" | "prebot" | "standings" | "live" | "ai" | "admin";
 type Msg = { role: "user" | "assistant"; content: string };
 type UserRow = {
@@ -839,7 +840,7 @@ export default function Home() {
         <div className="access-card">
           <div className="access-logo">⚽</div>
           <h1>
-            ALVES.<b>AnalisesV11</b>
+            ALVES.<b>AnalisesV12</b>
           </h1>
           <p>Verificando acesso seguro...</p>
         </div>
@@ -851,7 +852,7 @@ export default function Home() {
         <div className="access-card">
           <div className="access-logo">⚽</div>
           <h1>
-            ALVES.<b>AnalisesV11</b>
+            ALVES.<b>AnalisesV12</b>
           </h1>
           <p>Pré-jogo, ao vivo e inteligência estatística.</p>
           <div className="access-tabs">
@@ -979,7 +980,7 @@ export default function Home() {
           <span>⚽</span>
           <div>
             <h1>
-              ALVES.<b>AnalisesV11</b>
+              ALVES.<b>AnalisesV12</b>
             </h1>
             <p>Estatísticas profissionais de futebol</p>
           </div>
@@ -1501,6 +1502,7 @@ export default function Home() {
                 <article><span>Jogos ao vivo</span><b>{todayLiveCount}</b><small>detectados na consulta atual</small></article>
               </div>
               <AdminPerformance />
+              <SystemAdmin />
               <section className="panel csv-quality-panel"><div className="panel-head"><i className="orange">✓</i><div><h3>Qualidade dos bancos CSV</h3><p>Nota calculada por cobertura, datas válidas e possíveis duplicidades</p></div></div><div className="csv-quality-grid">{leagues.map(l=><article key={l.id}><header><span><b>{l.name}</b><small>{l.country} • {l.season}</small></span><strong className={(l.qualityReport?.score||0)>=70?"quality-good":"quality-attention"}>{l.qualityReport?.score||0}<small>/100</small></strong></header><div><span><small>CLASSIFICAÇÃO</small><b>{l.qualityReport?.grade||"Sem nota"}</b></span><span><small>PARTIDAS</small><b>{l.qualityReport?.totalGames||0}</b></span><span><small>DUPLICADAS</small><b>{l.qualityReport?.duplicates||0}</b></span><span><small>COM DATA</small><b>{l.qualityReport?.datedGames||0}</b></span></div><progress max="100" value={l.qualityReport?.score||0}/><footer><span>Mais recente: {l.qualityReport?.latestGameDate?new Date(l.qualityReport.latestGameDate).toLocaleDateString("pt-BR"):"data não identificada"}</span>{l.qualityReport?.warnings?.length?<em>{l.qualityReport.warnings.join(" • ")}</em>:<em className="quality-clean">✓ Cobertura completa identificada</em>}</footer></article>)}</div></section>
               <section className="panel api-control-panel compact-api-control"><div className="panel-head"><i className="green">↻</i><div><h3>Atualização automática e cobertura</h3><p>{leagues.length} ligas • {updatedLeagues} atualizadas • {problemLeagues} com atenção</p></div><button disabled={syncLoading} onClick={syncAll}>{syncLoading?"Atualizando...":"Atualizar todas agora"}</button></div><details className="api-coverage-details"><summary><span>Ver detalhes das competições</span><small>{leagues.length-updatedLeagues-problemLeagues} aguardando atualização</small></summary><div className="api-status-list compact-api-status">{leagues.map(l=><article key={l.id}><span><b>{l.name}</b><small>{l.country} • {l.season}{l.apiSync?.round?` • ${l.apiSync.round}`:""}</small></span><em className={l.apiSync?.status==="updated"?"api-ok":"api-off"}>{l.apiSync?.status==="updated"?"● Atualizada":l.apiSync?.error?"● Erro / sem cobertura":"● Aguardando"}</em><span><b>{l.apiSync?.games.length||0}</b><small>jogos</small></span><span><small>{l.apiSync?.updatedAt?new Date(l.apiSync.updatedAt).toLocaleString("pt-BR"):"Nunca atualizada"}</small>{l.apiSync?.error&&<small title={l.apiSync.error}>Clique ou passe o mouse para ver o erro</small>}</span></article>)}</div></details></section>
               <UserAdmin />
@@ -1925,6 +1927,7 @@ function UserAdmin() {
     });
     if (r.ok) await loadUsers();
   };
+  const securityAction=async(id:string,action:"reset_password"|"end_sessions")=>{if(action==="reset_password"&&!confirm("Gerar uma nova senha temporária e encerrar as sessões atuais deste usuário?"))return;const r=await fetch("/api/admin/users",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,action})}),d=await r.json();if(r.ok&&d.temporaryPassword){setMessage(`Senha temporária: ${d.temporaryPassword} — copie agora e envie ao usuário por um canal seguro.`);prompt("Copie a senha temporária:",d.temporaryPassword)}else setMessage(r.ok?"Todas as sessões do usuário foram encerradas.":d.error||"Não foi possível concluir a ação.");if(r.ok)await loadUsers()};
   const label: Record<UserRow["status"], string> = {
     pending: "Aguardando",
     approved: "Aprovado",
@@ -1977,6 +1980,8 @@ function UserAdmin() {
                     Bloquear
                   </button>
                 )}
+                <button onClick={()=>securityAction(u.id,"reset_password")}>Nova senha</button>
+                <button onClick={()=>securityAction(u.id,"end_sessions")}>Encerrar sessões</button>
                 <button className="danger" onClick={() => remove(u.id)}>
                   Excluir
                 </button>

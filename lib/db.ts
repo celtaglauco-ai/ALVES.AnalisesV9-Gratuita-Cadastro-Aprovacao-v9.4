@@ -32,6 +32,7 @@ export function initDb() {
   CONSTRAINT users_status_check CHECK (status IN ('pending','approved','rejected','blocked'))
  ); ALTER TABLE leagues ADD COLUMN IF NOT EXISTS data_quality JSONB NOT NULL DEFAULT '{"goals":true,"corners":true,"cards":true,"shots":true,"shotsOnTarget":true}'::jsonb;
  ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen BIGINT NOT NULL DEFAULT 0;
+ ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
  CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_ci ON users (lower(email));
  INSERT INTO users(id,name,email,password_hash,status,created_at,updated_at,last_seen)
  VALUES('admin','Administrador','admin@alves.local','', 'approved',0,0,0)
@@ -55,6 +56,23 @@ export function initDb() {
  ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS component_results JSONB NOT NULL DEFAULT '[]'::jsonb;
  ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS resolution_source TEXT NOT NULL DEFAULT '';
  ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS matched_game JSONB NOT NULL DEFAULT '{}'::jsonb;
+ ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS fixture_key TEXT NOT NULL DEFAULT '';
+ CREATE TABLE IF NOT EXISTS system_settings (
+  key TEXT PRIMARY KEY, value JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at BIGINT NOT NULL, updated_by TEXT NOT NULL DEFAULT 'system'
+ );
+ INSERT INTO system_settings(key,value,updated_at,updated_by) VALUES('settlement_rules','{"yellowWeight":1,"redWeight":1,"includeExtraTime":false,"autoGoals":true,"autoCorners":true,"autoCards":false,"batchSize":200}'::jsonb,0,'system') ON CONFLICT(key) DO NOTHING;
+ INSERT INTO system_settings(key,value,updated_at,updated_by) VALUES('bot_defaults','{"minConfidence":65,"minGames":5,"oddReminder":"1,62 a 1,80"}'::jsonb,0,'system') ON CONFLICT(key) DO NOTHING;
+ CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY, actor_id TEXT NOT NULL DEFAULT '', actor_role TEXT NOT NULL DEFAULT '', action TEXT NOT NULL,
+  target_type TEXT NOT NULL DEFAULT '', target_id TEXT NOT NULL DEFAULT '', details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ip TEXT NOT NULL DEFAULT '', created_at BIGINT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at DESC);
+ CREATE INDEX IF NOT EXISTS audit_logs_target_idx ON audit_logs(target_type,target_id,created_at DESC);
+ CREATE TABLE IF NOT EXISTS login_attempts (
+  id TEXT PRIMARY KEY, login TEXT NOT NULL, ip TEXT NOT NULL, success BOOLEAN NOT NULL DEFAULT false, created_at BIGINT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS login_attempts_lookup_idx ON login_attempts(login,ip,created_at DESC);
  CREATE TABLE IF NOT EXISTS referees (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL DEFAULT '', league_id TEXT NOT NULL DEFAULT '',
   games INTEGER NOT NULL DEFAULT 0, fouls_per_game DOUBLE PRECISION NOT NULL DEFAULT 0,

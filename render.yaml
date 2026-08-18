@@ -19,3 +19,7 @@ services:
         sync: false
       - key: CRON_SECRET
         generateValue: true
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false

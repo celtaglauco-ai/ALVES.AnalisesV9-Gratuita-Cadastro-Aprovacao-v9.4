@@ -1,8 +1,8 @@
-ALVES.AnalisesV11 Profissional — atualização gratuita
+ALVES.AnalisesV12 — atualização segura e gratuita
 
 ATUALIZAR O SITE QUE JÁ ESTÁ NO AR
 
-1. No mesmo repositório GitHub, envie todos os arquivos desta V11 substituindo os anteriores.
+1. No mesmo repositório GitHub, envie todos os arquivos desta V12 substituindo os anteriores.
 2. Não crie outro Render e não altere as variáveis existentes.
 3. O Render fará o deploy automaticamente; se necessário use Manual Deploy > Deploy latest commit.
 4. O endereço do site e os dados do Neon permanecem os mesmos.

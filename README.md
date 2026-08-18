@@ -1,4 +1,18 @@
-# ALVES.AnalisesV11 Profissional
+# ALVES.AnalisesV12 — Consolidação, Segurança e Administração
+
+## Novidades da V12
+
+- Central administrativa de saúde, configurações e exportações.
+- Auditoria de ações importantes.
+- Limite de tentativas de login e bloqueio temporário.
+- Redefinição de senha e encerramento de sessões pelo administrador.
+- Regras configuráveis para liquidação de gols, escanteios e cartões.
+- Conferência automática em lotes para preservar o plano gratuito.
+- Identificação interna de partidas e preservação integral do banco existente.
+
+As variáveis `ADMIN_USER` e `ADMIN_PASSWORD_HASH` são opcionais na primeira atualização para não bloquear o administrador existente. Configure-as no Render para retirar a credencial administrativa do código. Para gerar um hash no computador, execute:
+
+`node -e "const c=require('crypto'),p=process.argv[1],s=c.randomBytes(16).toString('hex');console.log(s+':'+c.scryptSync(p,s,64).toString('hex'))" "SUA-SENHA-FORTE"`
 
 ## Melhorias V11.3
 

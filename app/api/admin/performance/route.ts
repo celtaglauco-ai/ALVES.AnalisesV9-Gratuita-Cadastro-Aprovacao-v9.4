@@ -1,7 +1,8 @@
 import {NextResponse} from "next/server";
-import {isAdmin} from "@/lib/auth";
+import {getSession,isAdmin} from "@/lib/auth";
 import {initDb,pool} from "@/lib/db";
 import {settlePendingAnalyses} from "@/lib/settlement";
+import {audit,requestIp} from "@/lib/audit";
 
 type Row={id:string;mode:string;league_id?:string;home:string;away:string;market:string;confidence:number;result_status:"pending"|"hit"|"miss";result_note:string;created_at:number;user_name:string;league_name?:string};
 type GroupBase={name:string;total:number;hits:number;misses:number};
@@ -51,6 +52,7 @@ export async function PATCH(req:Request){
  if(!await isAdmin())return NextResponse.json({error:"Acesso administrativo obrigatório."},{status:401});
  const b=await req.json(),status=String(b.status||"");if(!['pending','hit','miss'].includes(status))return NextResponse.json({error:"Resultado inválido."},{status:400});
  await initDb();const result=await pool.query("UPDATE analysis_history SET result_status=$1,result_note=$2,resolved_at=$3 WHERE id=$4",[status,String(b.note||"").slice(0,300),status==='pending'?0:Date.now(),String(b.id||"")]);
+ await audit("admin_prediction_result_changed",await getSession(),"analysis",String(b.id||""),{status,note:String(b.note||"").slice(0,300)},requestIp(req));
  return NextResponse.json({ok:true,updated:result.rowCount||0});
 }
 
